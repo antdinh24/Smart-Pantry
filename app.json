@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "Smart Pantry",
+    "slug": "smart-pantry",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./public/icon.svg",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./public/icon.svg",
+      "resizeMode": "contain",
+      "backgroundColor": "#0f1419"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.smartpantry.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./public/icon.svg",
+        "backgroundColor": "#0f1419"
+      },
+      "package": "com.smartpantry.app"
+    },
+    "web": {
+      "favicon": "./public/icon.svg"
+    },
+    "plugins": [
+      "expo-sqlite"
+    ]
+  }
+}
