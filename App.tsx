@@ -32,7 +32,7 @@ export default function App() {
       await DatabaseService.initialize()
 
       // Track app launches
-      const launchCount = StorageService.incrementLaunchCount()
+      const launchCount = await StorageService.incrementLaunchCount()
       console.log(`📱 App launch #${launchCount}`)
 
       // Mark as ready

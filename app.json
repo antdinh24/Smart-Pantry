@@ -4,10 +4,10 @@
     "slug": "smart-pantry",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./public/icon.svg",
+    "icon": "./public/apple-icon.png",
     "userInterfaceStyle": "dark",
     "splash": {
-      "image": "./public/icon.svg",
+      "image": "./public/apple-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#0f1419"
     },
@@ -20,16 +20,23 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./public/icon.svg",
+        "foregroundImage": "./public/apple-icon.png",
         "backgroundColor": "#0f1419"
       },
-      "package": "com.smartpantry.app"
+      "package": "com.smartpantry.app",
+      "jsEngine": "hermes"
     },
     "web": {
       "favicon": "./public/icon.svg"
     },
     "plugins": [
-      "expo-sqlite"
-    ]
+      "expo-sqlite",
+      "expo-dev-client"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "69de6359-283c-4970-982d-bb59f99309c2"
+      }
+    }
   }
 }

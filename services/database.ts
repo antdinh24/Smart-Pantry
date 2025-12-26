@@ -37,12 +37,12 @@ class DatabaseService {
       this.db = await SQLite.openDatabaseAsync(DB_NAME)
 
       // Check if we need to run migrations
-      const currentVersion = StorageService.getDbSchemaVersion()
+      const currentVersion = await StorageService.getDbSchemaVersion()
 
       if (currentVersion < CURRENT_SCHEMA_VERSION) {
         console.log(`📊 Running migrations from v${currentVersion} to v${CURRENT_SCHEMA_VERSION}`)
         await this.runMigrations(currentVersion)
-        StorageService.setDbSchemaVersion(CURRENT_SCHEMA_VERSION)
+        await StorageService.setDbSchemaVersion(CURRENT_SCHEMA_VERSION)
       } else {
         console.log('✅ Database schema up to date')
       }

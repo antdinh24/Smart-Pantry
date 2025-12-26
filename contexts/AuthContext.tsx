@@ -61,10 +61,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           subscriptionStatus: profile?.subscription_status || 'free',
         })
 
-        // Save to MMKV
-        StorageService.setUserId(session.user.id)
-        StorageService.setUserEmail(session.user.email || '')
-        StorageService.setPremiumUnlocked(profile?.subscription_status === 'premium')
+        // Save to SecureStore
+        await StorageService.setUserId(session.user.id)
+        await StorageService.setUserEmail(session.user.email || '')
+        await StorageService.setPremiumUnlocked(profile?.subscription_status === 'premium')
       } else {
         setUser(null)
       }
@@ -95,8 +95,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         subscriptionStatus: profile?.subscription_status || 'free',
       })
 
-      // Save to MMKV
-      StorageService.setPremiumUnlocked(profile?.subscription_status === 'premium')
+      // Save to SecureStore
+      await StorageService.setPremiumUnlocked(profile?.subscription_status === 'premium')
 
       console.log('✅ Signed in successfully')
     } catch (error: any) {
@@ -144,7 +144,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setUser(null)
 
       // Clear local data
-      StorageService.clearAuth()
+      await StorageService.clearAuth()
 
       console.log('✅ Signed out successfully')
     } catch (error: any) {
@@ -168,7 +168,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         prev ? { ...prev, subscriptionStatus: status.subscription_status } : null
       )
 
-      StorageService.setPremiumUnlocked(isPremium)
+      await StorageService.setPremiumUnlocked(isPremium)
     } catch (error) {
       console.error('Failed to refresh subscription:', error)
     }

@@ -1,0 +1,237 @@
+name: EAS Build
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Platform to build for'
+        required: true
+        type: choice
+        options:
+          - all
+          - ios
+          - android
+      profile:
+        description: 'Build profile to use'
+        required: true
+        type: choice
+        options:
+          - development
+          - preview
+          - production
+
+jobs:
+  detect-build-requirements:
+    name: Detect Build Requirements
+    runs-on: ubuntu-latest
+    outputs:
+      platform: ${{ steps.set-platform.outputs.platform }}
+      profile: ${{ steps.set-profile.outputs.profile }}
+      should-build: ${{ steps.set-profile.outputs.should-build }}
+      build-ios: ${{ steps.set-platform.outputs.build-ios }}
+      build-android: ${{ steps.set-platform.outputs.build-android }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set build platform and profile
+        id: set-platform
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            PLATFORM="${{ github.event.inputs.platform }}"
+          else
+            PLATFORM="all"
+          fi
+          
+          if [ "$PLATFORM" = "all" ] || [ "$PLATFORM" = "ios" ]; then
+            echo "build-ios=true" >> $GITHUB_OUTPUT
+          else
+            echo "build-ios=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if [ "$PLATFORM" = "all" ] || [ "$PLATFORM" = "android" ]; then
+            echo "build-android=true" >> $GITHUB_OUTPUT
+          else
+            echo "build-android=false" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "platform=$PLATFORM" >> $GITHUB_OUTPUT
+      
+      - name: Set build profile
+        id: set-profile
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            PROFILE="${{ github.event.inputs.profile }}"
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            PROFILE="production"
+          elif [[ "${{ github.ref }}" == refs/heads/main ]] || [[ "${{ github.ref }}" == refs/heads/develop ]]; then
+            PROFILE="preview"
+          else
+            PROFILE="preview"
+          fi
+          echo "profile=$PROFILE" >> $GITHUB_OUTPUT
+          echo "should-build=true" >> $GITHUB_OUTPUT
+
+  build-ios:
+    name: Build iOS
+    runs-on: ubuntu-latest
+    needs: detect-build-requirements
+    if: needs.detect-build-requirements.outputs.should-build == 'true' && needs.detect-build-requirements.outputs.build-ios == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+      
+      - name: Setup Expo and EAS
+        uses: expo/expo-github-action@v8
+        with:
+          expo-version: latest
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build on EAS
+        uses: expo/eas-build@v2
+        with:
+          eas-version: latest
+          platform: ios
+          profile: ${{ needs.detect-build-requirements.outputs.profile }}
+          token: ${{ secrets.EXPO_TOKEN }}
+          wait: true
+      
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-ios-${{ needs.detect-build-requirements.outputs.profile }}
+          path: |
+            *.ipa
+          retention-days: 30
+
+  build-android:
+    name: Build Android
+    runs-on: ubuntu-latest
+    needs: detect-build-requirements
+    if: needs.detect-build-requirements.outputs.should-build == 'true' && needs.detect-build-requirements.outputs.build-android == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+      
+      - name: Setup Expo and EAS
+        uses: expo/expo-github-action@v8
+        with:
+          expo-version: latest
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build on EAS
+        uses: expo/eas-build@v2
+        with:
+          eas-version: latest
+          platform: android
+          profile: ${{ needs.detect-build-requirements.outputs.profile }}
+          token: ${{ secrets.EXPO_TOKEN }}
+          wait: true
+      
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-android-${{ needs.detect-build-requirements.outputs.profile }}
+          path: |
+            *.apk
+            *.aab
+          retention-days: 30
+
+  submit-ios:
+    name: Submit iOS to App Store
+    runs-on: ubuntu-latest
+    needs: [detect-build-requirements, build-ios]
+    if: |
+      needs.detect-build-requirements.outputs.profile == 'production' &&
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) &&
+      needs.detect-build-requirements.outputs.build-ios == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+      
+      - name: Setup Expo and EAS
+        uses: expo/expo-github-action@v8
+        with:
+          expo-version: latest
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Submit to App Store
+        uses: expo/eas-submit@v1
+        with:
+          eas-version: latest
+          platform: ios
+          latest: true
+          profile: production
+          token: ${{ secrets.EXPO_TOKEN }}
+
+  submit-android:
+    name: Submit Android to Play Store
+    runs-on: ubuntu-latest
+    needs: [detect-build-requirements, build-android]
+    if: |
+      needs.detect-build-requirements.outputs.profile == 'production' &&
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) &&
+      needs.detect-build-requirements.outputs.build-android == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+      
+      - name: Setup Expo and EAS
+        uses: expo/expo-github-action@v8
+        with:
+          expo-version: latest
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Submit to Play Store
+        uses: expo/eas-submit@v1
+        with:
+          eas-version: latest
+          platform: android
+          latest: true
+          profile: production
+          token: ${{ secrets.EXPO_TOKEN }}

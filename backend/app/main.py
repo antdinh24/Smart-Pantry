@@ -60,9 +60,9 @@ async def health_check():
     }
 
 
-# TODO: Register routers here as we build them
-# Example:
-# from app.routers import recipes, pantry, auth
-# app.include_router(recipes.router, prefix="/api/v1/recipes", tags=["recipes"])
-# app.include_router(pantry.router, prefix="/api/v1/pantry", tags=["pantry"])
-# app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
+# Register API routers
+from app.routers import auth, pantry, recipes
+
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
+app.include_router(pantry.router, prefix="/api/v1/pantry", tags=["pantry"])
+app.include_router(recipes.router, prefix="/api/v1/recipes", tags=["recipes"])

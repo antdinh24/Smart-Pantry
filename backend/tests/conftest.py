@@ -140,6 +140,24 @@ def auth_headers(mock_user):
 # ============================================================
 
 @pytest.fixture
+def db_session(mocker):
+    """
+    Mock database session for testing
+
+    Usage:
+        def test_database_operation(db_session):
+            # Database operations are mocked
+    """
+    mock_session = mocker.Mock()
+    mock_session.add = mocker.Mock()
+    mock_session.commit = mocker.Mock()
+    mock_session.refresh = mocker.Mock()
+    mock_session.rollback = mocker.Mock()
+    mock_session.query = mocker.Mock()
+    return mock_session
+
+
+@pytest.fixture
 def mock_pantry_item():
     """
     Fake pantry item for testing
@@ -243,6 +261,30 @@ def mock_openai_response():
             }
         ]
     }
+
+
+@pytest.fixture
+def mock_supabase_auth_success(mocker):
+    """
+    Mock successful Supabase auth response
+
+    Usage:
+        def test_login(mocker, mock_supabase_auth_success):
+            mocker.patch("app.routers.auth.supabase.auth.sign_in_with_password", return_value=mock_supabase_auth_success)
+    """
+    mock_user = mocker.Mock()
+    mock_user.id = "550e8400-e29b-41d4-a716-446655440000"
+    mock_user.email = "test@example.com"
+
+    mock_session = mocker.Mock()
+    mock_session.access_token = "test-access-token-123"
+    mock_session.refresh_token = "test-refresh-token-123"
+
+    mock_response = mocker.Mock()
+    mock_response.user = mock_user
+    mock_response.session = mock_session
+
+    return mock_response
 
 
 @pytest.fixture

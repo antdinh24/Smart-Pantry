@@ -8,23 +8,29 @@
  * - Manages file uploads (receipt images)
  */
 
+// #region agent log
+fetch('http://127.0.0.1:7242/ingest/ffe8eaa6-9082-45b1-bd8b-1379e0e455b1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'services/supabase.ts:11',message:'Attempting to import @supabase/supabase-js',data:{hypothesisId:'B'},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix'})}).catch(()=>{});
+// #endregion
 import { createClient } from '@supabase/supabase-js'
+// #region agent log
+fetch('http://127.0.0.1:7242/ingest/ffe8eaa6-9082-45b1-bd8b-1379e0e455b1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'services/supabase.ts:13',message:'@supabase/supabase-js import successful',data:{createClientType:typeof createClient,hypothesisId:'B'},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix'})}).catch(()=>{});
+// #endregion
 import { env } from '../config/env'
 import StorageService from './storage'
 
 // Create Supabase client
 export const supabase = createClient(env.supabaseUrl, env.supabaseAnonKey, {
   auth: {
-    // Persist session using MMKV
+    // Persist session using SecureStore
     storage: {
-      getItem: (key: string) => {
-        return StorageService.get(key) as string | null
+      getItem: async (key: string) => {
+        return await StorageService.get(key)
       },
-      setItem: (key: string, value: string) => {
-        StorageService.set(key, value)
+      setItem: async (key: string, value: string) => {
+        await StorageService.set(key, value)
       },
-      removeItem: (key: string) => {
-        StorageService.delete(key)
+      removeItem: async (key: string) => {
+        await StorageService.delete(key)
       },
     },
     autoRefreshToken: true,
@@ -66,10 +72,10 @@ export const SupabaseService = {
 
     if (error) throw error
 
-    // Save user info to MMKV
+    // Save user info to SecureStore
     if (data.user) {
-      StorageService.setUserId(data.user.id)
-      StorageService.setUserEmail(data.user.email || '')
+      await StorageService.setUserId(data.user.id)
+      await StorageService.setUserEmail(data.user.email || '')
     }
 
     return data
@@ -83,7 +89,7 @@ export const SupabaseService = {
     if (error) throw error
 
     // Clear local auth data
-    StorageService.clearAuth()
+    await StorageService.clearAuth()
   },
 
   /**

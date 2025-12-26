@@ -8,7 +8,13 @@
  * - Retry logic for failed requests
  */
 
+// #region agent log
+fetch('http://127.0.0.1:7242/ingest/ffe8eaa6-9082-45b1-bd8b-1379e0e455b1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'services/api.ts:11',message:'Attempting to import axios',data:{hypothesisId:'A'},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix'})}).catch(()=>{});
+// #endregion
 import axios, { AxiosInstance, AxiosError } from 'axios'
+// #region agent log
+fetch('http://127.0.0.1:7242/ingest/ffe8eaa6-9082-45b1-bd8b-1379e0e455b1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'services/api.ts:13',message:'axios import successful',data:{axiosType:typeof axios,hypothesisId:'A'},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix'})}).catch(()=>{});
+// #endregion
 import { env } from '../config/env'
 import StorageService from './storage'
 
@@ -23,8 +29,8 @@ const apiClient: AxiosInstance = axios.create({
 
 // Request interceptor - add auth token
 apiClient.interceptors.request.use(
-  (config) => {
-    const token = StorageService.getAuthToken()
+  async (config) => {
+    const token = await StorageService.getAuthToken()
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
