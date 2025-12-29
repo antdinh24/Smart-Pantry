@@ -6,6 +6,7 @@
     "build": "next build",
     "dev": "next dev",
     "lint": "eslint .",
+    "test": "echo \"No frontend tests configured yet\" && exit 0",
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",

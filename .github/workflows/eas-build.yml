@@ -1,4 +1,4 @@
-name: EAS Build
+name: CI/CD Pipeline
 
 on:
   push:
@@ -31,9 +31,110 @@ on:
           - production
 
 jobs:
+  # Quality checks run first - fast feedback
+  quality-checks-frontend:
+    name: Frontend Quality Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+      
+      - name: Cache node modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Lint TypeScript/JavaScript
+        run: npm run lint
+        continue-on-error: false
+      
+      - name: Type Check
+        run: npx tsc --noEmit
+        continue-on-error: false
+      
+      - name: Run Frontend Tests
+        run: npm test --if-present
+        continue-on-error: false
+      
+      - name: Security Audit
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+  quality-checks-backend:
+    name: Backend Quality Checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install flake8 black mypy bandit pytest-cov
+      
+      - name: Lint with flake8
+        run: |
+          # Stop the build if there are Python syntax errors or undefined names
+          flake8 app --count --select=E9,F63,F7,F82 --show-source --statistics
+          # Exit-zero treats all errors as warnings
+          flake8 app --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+        continue-on-error: false
+      
+      - name: Check code formatting with black
+        run: black --check app tests
+        continue-on-error: true
+      
+      - name: Type check with mypy
+        run: mypy app --ignore-missing-imports
+        continue-on-error: true
+      
+      - name: Security check with bandit
+        run: bandit -r app -ll
+        continue-on-error: true
+      
+      - name: Run Python tests with coverage
+        run: pytest tests/ --cov=app --cov-report=xml --cov-report=term
+        continue-on-error: false
+      
+      - name: Upload coverage to artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage.xml
+          retention-days: 30
+
   detect-build-requirements:
     name: Detect Build Requirements
     runs-on: ubuntu-latest
+    needs: [quality-checks-frontend, quality-checks-backend]
     outputs:
       platform: ${{ steps.set-platform.outputs.platform }}
       profile: ${{ steps.set-profile.outputs.profile }}
@@ -75,8 +176,10 @@ jobs:
             PROFILE="${{ github.event.inputs.profile }}"
           elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             PROFILE="production"
-          elif [[ "${{ github.ref }}" == refs/heads/main ]] || [[ "${{ github.ref }}" == refs/heads/develop ]]; then
+          elif [[ "${{ github.ref }}" == refs/heads/main ]]; then
             PROFILE="preview"
+          elif [[ "${{ github.ref }}" == refs/heads/develop ]]; then
+            PROFILE="development"
           else
             PROFILE="preview"
           fi
@@ -95,6 +198,16 @@ jobs:
         with:
           node-version: 20.x
           cache: 'npm'
+      
+      - name: Cache node modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
       
       - name: Setup Expo and EAS
         uses: expo/expo-github-action@v8
@@ -137,6 +250,26 @@ jobs:
           node-version: 20.x
           cache: 'npm'
       
+      - name: Cache node modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+      
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+      
       - name: Setup Expo and EAS
         uses: expo/expo-github-action@v8
         with:
@@ -166,72 +299,27 @@ jobs:
             *.aab
           retention-days: 30
 
-  submit-ios:
-    name: Submit iOS to App Store
+  deployment-status:
+    name: Deployment Status
     runs-on: ubuntu-latest
-    needs: [detect-build-requirements, build-ios]
-    if: |
-      needs.detect-build-requirements.outputs.profile == 'production' &&
-      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) &&
-      needs.detect-build-requirements.outputs.build-ios == 'true'
+    needs: [build-ios, build-android]
+    if: always()
     steps:
-      - uses: actions/checkout@v4
-      
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20.x
-          cache: 'npm'
-      
-      - name: Setup Expo and EAS
-        uses: expo/expo-github-action@v8
-        with:
-          expo-version: latest
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
-      
-      - name: Install dependencies
-        run: npm ci
-      
-      - name: Submit to App Store
-        uses: expo/eas-submit@v1
-        with:
-          eas-version: latest
-          platform: ios
-          latest: true
-          profile: production
-          token: ${{ secrets.EXPO_TOKEN }}
-
-  submit-android:
-    name: Submit Android to Play Store
-    runs-on: ubuntu-latest
-    needs: [detect-build-requirements, build-android]
-    if: |
-      needs.detect-build-requirements.outputs.profile == 'production' &&
-      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) &&
-      needs.detect-build-requirements.outputs.build-android == 'true'
-    steps:
-      - uses: actions/checkout@v4
-      
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20.x
-          cache: 'npm'
-      
-      - name: Setup Expo and EAS
-        uses: expo/expo-github-action@v8
-        with:
-          expo-version: latest
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
-      
-      - name: Install dependencies
-        run: npm ci
-      
-      - name: Submit to Play Store
-        uses: expo/eas-submit@v1
-        with:
-          eas-version: latest
-          platform: android
-          latest: true
-          profile: production
-          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Check deployment readiness
+        run: |
+          echo "Build Profile: ${{ needs.detect-build-requirements.outputs.profile }}"
+          echo "Branch: ${{ github.ref }}"
+          
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "✅ Builds complete for main branch"
+            echo "📦 Preview builds are ready for testing"
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "🚀 Production builds complete"
+            echo "📝 Ready for manual store submission"
+            echo ""
+            echo "To submit to stores manually:"
+            echo "  iOS: eas submit --platform ios --profile production"
+            echo "  Android: eas submit --platform android --profile production"
+          else
+            echo "✅ Development builds complete"
+          fi
