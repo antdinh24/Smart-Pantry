@@ -25,19 +25,28 @@ npx eas secret:create --scope project --name EXPO_PUBLIC_ENABLE_ADS --value "fal
 
 ## Step 2: Set GitHub Secret (for CI/CD)
 
-The token you provided is for GitHub Actions. Here's how to add it:
+You need an Expo access token for GitHub Actions to build your app. Here's how to set it up:
 
+### Generate an Expo Token
+1. Go to [expo.dev/accounts/[your-username]/settings/access-tokens](https://expo.dev/settings/access-tokens)
+2. Click **Create token**
+3. Give it a descriptive name (e.g., "GitHub Actions CI")
+4. Copy the generated token
+
+### Add to GitHub Secrets
 1. Go to your GitHub repository
 2. Navigate to **Settings** → **Secrets and variables** → **Actions**
 3. Click **New repository secret**
 4. Name: `EXPO_TOKEN`
-5. Value: `np84eI8RKuoKqf_ziu6Kpe7TP1nxDh-FsESHhQy4`
+5. Value: *paste your Expo token here*
 6. Click **Add secret**
 
 Alternatively, you can use the GitHub CLI if you have it installed:
 ```bash
-gh secret set EXPO_TOKEN --body "np84eI8RKuoKqf_ziu6Kpe7TP1nxDh-FsESHhQy4"
+gh secret set EXPO_TOKEN --body "your-expo-token-here"
 ```
+
+> ⚠️ **Security Warning:** Never commit actual tokens or secrets to documentation or code. Always use placeholders in docs and set real values via secure secret management.
 
 ## Alternative: Using eas.json for Environment Variables
 
