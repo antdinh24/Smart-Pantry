@@ -16,7 +16,12 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.smartpantry.app"
+      "bundleIdentifier": "com.smartpantry.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Smart Pantry needs access to your camera to scan receipts and barcodes.",
+        "NSPhotoLibraryUsageDescription": "Smart Pantry needs access to your photo library to upload receipt images.",
+        "NSMicrophoneUsageDescription": "Smart Pantry does not use the microphone."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -24,14 +29,45 @@
         "backgroundColor": "#0f1419"
       },
       "package": "com.smartpantry.app",
-      "jsEngine": "hermes"
+      "jsEngine": "hermes",
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES"
+      ]
     },
     "web": {
       "favicon": "./public/icon.svg"
     },
     "plugins": [
       "expo-sqlite",
-      "expo-dev-client"
+      "expo-dev-client",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Smart Pantry to access your camera to scan receipts and barcodes."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Smart Pantry to access your photo library to upload receipt images."
+        }
+      ],
+      [
+        "react-native-vision-camera",
+        {
+          "cameraPermissionText": "Allow Smart Pantry to access your camera to scan receipts and barcodes.",
+          "enableCodeScanner": true
+        }
+      ],
+      [
+        "@react-native-ml-kit/text-recognition",
+        {
+          "models": "all"
+        }
+      ]
     ],
     "extra": {
       "eas": {
