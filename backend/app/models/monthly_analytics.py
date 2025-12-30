@@ -16,7 +16,8 @@ Product Manager Note:
 - One record per user per month
 """
 
-from sqlalchemy import Column, String, DECIMAL, DateTime, UUID as SQLUUID, JSONB
+from sqlalchemy import Column, String, DECIMAL, DateTime, UUID as SQLUUID
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from app.database import Base
 import uuid

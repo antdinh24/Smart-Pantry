@@ -18,7 +18,7 @@ import pytest
 from typing import Generator, AsyncGenerator
 from fastapi.testclient import TestClient
 from httpx import AsyncClient
-from unittest.mock import Mock, AsyncMock
+from unittest.mock import Mock, AsyncMock, patch
 import os
 
 # Set test environment variables
@@ -33,8 +33,14 @@ os.environ["DATABASE_URL"] = "postgresql://test:test@localhost:5432/test"
 os.environ["API_VERSION"] = "v1"
 os.environ["ALLOWED_ORIGINS"] = "http://localhost"
 
-from app.main import app
-from app.config import get_settings
+# Mock Supabase client creation before importing app
+with patch('supabase.create_client') as mock_create_client:
+    mock_supabase = Mock()
+    mock_supabase.auth = Mock()
+    mock_create_client.return_value = mock_supabase
+    
+    from app.main import app
+    from app.config import get_settings
 
 
 # ============================================================
@@ -306,6 +312,100 @@ def mock_supabase_client(mocker):
     mock.single.return_value = {"data": {}, "error": None}
     mock.execute.return_value = {"data": [], "error": None}
     return mock
+
+
+# ============================================================
+# REAL JWT TOKEN FIXTURES FOR TESTING
+# ============================================================
+
+@pytest.fixture
+def test_user_id():
+    """Generate a consistent test user ID"""
+    return "550e8400-e29b-41d4-a716-446655440000"
+
+
+@pytest.fixture
+def generate_test_token():
+    """
+    Factory fixture to generate real JWT tokens for testing.
+    
+    Usage:
+        def test_something(generate_test_token):
+            token = generate_test_token(user_id="123", email="test@example.com")
+            headers = {"Authorization": f"Bearer {token}"}
+    """
+    from jose import jwt
+    from datetime import datetime, timedelta
+    
+    def _generate(user_id: str = None, email: str = "test@example.com", expired: bool = False):
+        """Generate a JWT token for testing"""
+        if user_id is None:
+            user_id = "550e8400-e29b-41d4-a716-446655440000"
+        
+        # Token payload (mimics Supabase JWT structure)
+        exp = datetime.utcnow() - timedelta(hours=1) if expired else datetime.utcnow() + timedelta(hours=1)
+        payload = {
+            "sub": user_id,  # Subject (user ID)
+            "email": email,
+            "iat": datetime.utcnow(),  # Issued at
+            "exp": exp,  # Expiration
+            "role": "authenticated",
+        }
+        
+        # Encode with test secret
+        token = jwt.encode(payload, "test-secret-key", algorithm="HS256")
+        return token
+    
+    return _generate
+
+
+@pytest.fixture
+def auth_headers(generate_test_token, test_user_id):
+    """
+    Generate authentication headers with a valid JWT token.
+    
+    Usage:
+        def test_protected_route(client, auth_headers):
+            response = client.get("/api/v1/protected", headers=auth_headers)
+            assert response.status_code == 200
+    """
+    token = generate_test_token(user_id=test_user_id)
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture(autouse=True)
+def mock_supabase_token_validation(mocker, test_user_id):
+    """
+    Automatically mock Supabase token validation for all tests.
+    This allows our test JWT tokens to be validated successfully.
+    
+    The mock intercepts supabase.auth.get_user() calls and validates
+    the token format, then returns a mock user response.
+    """
+    def mock_get_user(token: str):
+        """Mock Supabase's get_user method"""
+        # Decode the test token to extract user info
+        try:
+            from jose import jwt
+            payload = jwt.decode(token, "test-secret-key", algorithms=["HS256"])
+            
+            # Create mock user response
+            mock_user = mocker.Mock()
+            mock_user.id = payload.get("sub", test_user_id)
+            mock_user.email = payload.get("email", "test@example.com")
+            
+            mock_response = mocker.Mock()
+            mock_response.user = mock_user
+            
+            return mock_response
+        except Exception:
+            # Invalid token - return None to trigger 401
+            return None
+    
+    # Patch the Supabase client's auth.get_user method
+    mocker.patch("supabase.create_client", return_value=mocker.Mock(
+        auth=mocker.Mock(get_user=mock_get_user)
+    ))
 
 
 @pytest.fixture

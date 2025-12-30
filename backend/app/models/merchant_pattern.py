@@ -15,7 +15,8 @@ Product Manager Note:
 - Patterns with verified_count >= 100 are "promoted" (checked first)
 """
 
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, DECIMAL, UUID as SQLUUID, JSONB
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, DECIMAL, UUID as SQLUUID
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from app.database import Base
 import uuid

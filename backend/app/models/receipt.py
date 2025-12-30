@@ -16,7 +16,8 @@ Product Manager Note:
 - Processed flag tracks if items have been added to pantry
 """
 
-from sqlalchemy import Column, String, DECIMAL, DateTime, Boolean, UUID as SQLUUID, JSONB, Text
+from sqlalchemy import Column, String, DECIMAL, DateTime, Boolean, UUID as SQLUUID, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from app.database import Base
 import uuid

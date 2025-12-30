@@ -45,12 +45,10 @@ def mock_user_id():
 # ============================================================
 
 
-@patch('app.routers.ingredients.get_current_user_id')
 @patch('app.routers.ingredients.get_db')
 @patch('app.routers.ingredients.IngredientSearchService.search')
-def test_search_ingredients_success(mock_search, mock_get_db, mock_get_user_id, client, mock_db, mock_user_id):
+def test_search_ingredients_success(mock_search, mock_get_db, client, mock_db, auth_headers):
     """Full context: Search for ingredients with valid query"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     mock_search.return_value = [
@@ -74,7 +72,7 @@ def test_search_ingredients_success(mock_search, mock_get_db, mock_get_user_id, 
         }
     ]
 
-    response = client.get("/ingredients/search?q=milk&limit=20")
+    response = client.get("/ingredients/search?q=milk&limit=20", headers=auth_headers)
 
     assert response.status_code == 200
     data = response.json()
@@ -86,17 +84,15 @@ def test_search_ingredients_success(mock_search, mock_get_db, mock_get_user_id, 
     assert data['results'][0]['source'] == 'cache'
 
 
-@patch('app.routers.ingredients.get_current_user_id')
 @patch('app.routers.ingredients.get_db')
 @patch('app.routers.ingredients.IngredientSearchService.search')
-def test_search_ingredients_empty_results(mock_search, mock_get_db, mock_get_user_id, client, mock_db, mock_user_id):
+def test_search_ingredients_empty_results(mock_search, mock_get_db, client, mock_db, auth_headers):
     """Edge case: No results found should return empty list"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     mock_search.return_value = []
 
-    response = client.get("/ingredients/search?q=xyz&limit=20")
+    response = client.get("/ingredients/search?q=xyz&limit=20", headers=auth_headers)
 
     assert response.status_code == 200
     data = response.json()
@@ -104,37 +100,31 @@ def test_search_ingredients_empty_results(mock_search, mock_get_db, mock_get_use
     assert data['results'] == []
 
 
-@patch('app.routers.ingredients.get_current_user_id')
 @patch('app.routers.ingredients.get_db')
-def test_search_ingredients_empty_query(mock_get_db, mock_get_user_id, client, mock_db, mock_user_id):
+def test_search_ingredients_empty_query(mock_get_db, client, mock_db, auth_headers):
     """Edge case: Empty query should return 400"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
-    response = client.get("/ingredients/search?q=   &limit=20")
+    response = client.get("/ingredients/search?q=   &limit=20", headers=auth_headers)
 
     assert response.status_code == 400
     assert "cannot be empty" in response.json()['detail'].lower()
 
 
-@patch('app.routers.ingredients.get_current_user_id')
 @patch('app.routers.ingredients.get_db')
-def test_search_ingredients_missing_query(mock_get_db, mock_get_user_id, client, mock_db, mock_user_id):
+def test_search_ingredients_missing_query(mock_get_db, client, mock_db, auth_headers):
     """Edge case: Missing query parameter should return 422"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
-    response = client.get("/ingredients/search")
+    response = client.get("/ingredients/search", headers=auth_headers)
 
     assert response.status_code == 422
 
 
-@patch('app.routers.ingredients.get_current_user_id')
 @patch('app.routers.ingredients.get_db')
 @patch('app.routers.ingredients.IngredientSearchService.search')
-def test_search_ingredients_custom_limit(mock_search, mock_get_db, mock_get_user_id, client, mock_db, mock_user_id):
+def test_search_ingredients_custom_limit(mock_search, mock_get_db, client, mock_db, auth_headers):
     """Full context: Custom limit parameter"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     mock_search.return_value = [
@@ -148,60 +138,52 @@ def test_search_ingredients_custom_limit(mock_search, mock_get_db, mock_get_user
         }
     ]
 
-    response = client.get("/ingredients/search?q=milk&limit=5")
+    response = client.get("/ingredients/search?q=milk&limit=5", headers=auth_headers)
 
     assert response.status_code == 200
     mock_search.assert_called_once_with('milk', mock_db, limit=5)
 
 
-@patch('app.routers.ingredients.get_current_user_id')
 @patch('app.routers.ingredients.get_db')
 @patch('app.routers.ingredients.IngredientSearchService.search')
-def test_search_ingredients_max_limit_validation(mock_search, mock_get_db, mock_get_user_id, client, mock_db, mock_user_id):
+def test_search_ingredients_max_limit_validation(mock_search, mock_get_db, client, mock_db, auth_headers):
     """Edge case: Limit exceeds maximum should be rejected"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
-    response = client.get("/ingredients/search?q=milk&limit=200")
+    response = client.get("/ingredients/search?q=milk&limit=200", headers=auth_headers)
 
     assert response.status_code == 422
 
 
-@patch('app.routers.ingredients.get_current_user_id')
 @patch('app.routers.ingredients.get_db')
 @patch('app.routers.ingredients.IngredientSearchService.search')
-def test_search_ingredients_min_limit_validation(mock_search, mock_get_db, mock_get_user_id, client, mock_db, mock_user_id):
+def test_search_ingredients_min_limit_validation(mock_search, mock_get_db, client, mock_db, auth_headers):
     """Edge case: Limit below minimum should be rejected"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
-    response = client.get("/ingredients/search?q=milk&limit=0")
+    response = client.get("/ingredients/search?q=milk&limit=0", headers=auth_headers)
 
     assert response.status_code == 422
 
 
-@patch('app.routers.ingredients.get_current_user_id')
 @patch('app.routers.ingredients.get_db')
 @patch('app.routers.ingredients.IngredientSearchService.search')
-def test_search_ingredients_service_error(mock_search, mock_get_db, mock_get_user_id, client, mock_db, mock_user_id):
+def test_search_ingredients_service_error(mock_search, mock_get_db, client, mock_db, auth_headers):
     """Error handling: Service error should return 500"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     mock_search.side_effect = Exception("Database connection failed")
 
-    response = client.get("/ingredients/search?q=milk&limit=20")
+    response = client.get("/ingredients/search?q=milk&limit=20", headers=auth_headers)
 
     assert response.status_code == 500
     assert "Search failed" in response.json()['detail']
 
 
-@patch('app.routers.ingredients.get_current_user_id')
 @patch('app.routers.ingredients.get_db')
 @patch('app.routers.ingredients.IngredientSearchService.search')
-def test_search_ingredients_with_metadata(mock_search, mock_get_db, mock_get_user_id, client, mock_db, mock_user_id):
+def test_search_ingredients_with_metadata(mock_search, mock_get_db, client, mock_db, auth_headers):
     """Full context: Results include metadata from OpenFoodFacts"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     mock_search.return_value = [
@@ -221,7 +203,7 @@ def test_search_ingredients_with_metadata(mock_search, mock_get_db, mock_get_use
         }
     ]
 
-    response = client.get("/ingredients/search?q=organic%20milk&limit=10")
+    response = client.get("/ingredients/search?q=organic%20milk&limit=10", headers=auth_headers)
 
     assert response.status_code == 200
     data = response.json()
@@ -234,17 +216,15 @@ def test_search_ingredients_with_metadata(mock_search, mock_get_db, mock_get_use
 # ============================================================
 
 
-@patch('app.routers.ingredients.get_current_user_id')
 @patch('app.routers.ingredients.get_db')
 @patch('app.routers.ingredients.IngredientSearchService.increment_popularity')
-def test_select_ingredient_success(mock_increment, mock_get_db, mock_get_user_id, client, mock_db, mock_user_id):
+def test_select_ingredient_success(mock_increment, mock_get_db, client, mock_db, auth_headers):
     """Full context: Successfully track ingredient selection"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     ingredient_id = str(uuid.uuid4())
 
-    response = client.post(f"/ingredients/{ingredient_id}/select")
+    response = client.post(f"/ingredients/{ingredient_id}/select", headers=auth_headers)
 
     assert response.status_code == 200
     data = response.json()
@@ -253,30 +233,26 @@ def test_select_ingredient_success(mock_increment, mock_get_db, mock_get_user_id
     mock_increment.assert_called_once_with(ingredient_id, mock_db)
 
 
-@patch('app.routers.ingredients.get_current_user_id')
 @patch('app.routers.ingredients.get_db')
 @patch('app.routers.ingredients.IngredientSearchService.increment_popularity')
-def test_select_ingredient_service_error(mock_increment, mock_get_db, mock_get_user_id, client, mock_db, mock_user_id):
+def test_select_ingredient_service_error(mock_increment, mock_get_db, client, mock_db, auth_headers):
     """Error handling: Service error should return 500"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     mock_increment.side_effect = Exception("Database error")
 
     ingredient_id = str(uuid.uuid4())
 
-    response = client.post(f"/ingredients/{ingredient_id}/select")
+    response = client.post(f"/ingredients/{ingredient_id}/select", headers=auth_headers)
 
     assert response.status_code == 500
     assert "Failed to update popularity" in response.json()['detail']
 
 
-@patch('app.routers.ingredients.get_current_user_id')
 @patch('app.routers.ingredients.get_db')
 @patch('app.routers.ingredients.IngredientSearchService.increment_popularity')
-def test_select_ingredient_not_found(mock_increment, mock_get_db, mock_get_user_id, client, mock_db, mock_user_id):
+def test_select_ingredient_not_found(mock_increment, mock_get_db, client, mock_db, auth_headers):
     """Edge case: Service handles not found silently"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     # Service doesn't raise error for not found, just does nothing
@@ -284,7 +260,7 @@ def test_select_ingredient_not_found(mock_increment, mock_get_db, mock_get_user_
 
     ingredient_id = str(uuid.uuid4())
 
-    response = client.post(f"/ingredients/{ingredient_id}/select")
+    response = client.post(f"/ingredients/{ingredient_id}/select", headers=auth_headers)
 
     assert response.status_code == 200
 
@@ -294,12 +270,10 @@ def test_select_ingredient_not_found(mock_increment, mock_get_db, mock_get_user_
 # ============================================================
 
 
-@patch('app.routers.ingredients.get_current_user_id')
 @patch('app.routers.ingredients.get_db')
 @patch('app.routers.ingredients.IngredientSearchService.get_popular_ingredients')
-def test_get_popular_ingredients_success(mock_get_popular, mock_get_db, mock_get_user_id, client, mock_db, mock_user_id):
+def test_get_popular_ingredients_success(mock_get_popular, mock_get_db, client, mock_db, auth_headers):
     """Full context: Get popular ingredients sorted by usage"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     mock_get_popular.return_value = [
@@ -321,7 +295,7 @@ def test_get_popular_ingredients_success(mock_get_popular, mock_get_db, mock_get
         }
     ]
 
-    response = client.get("/ingredients/popular?limit=100")
+    response = client.get("/ingredients/popular?limit=100", headers=auth_headers)
 
     assert response.status_code == 200
     data = response.json()
@@ -331,28 +305,24 @@ def test_get_popular_ingredients_success(mock_get_popular, mock_get_db, mock_get
     assert data[1]['popularity'] == 400
 
 
-@patch('app.routers.ingredients.get_current_user_id')
 @patch('app.routers.ingredients.get_db')
 @patch('app.routers.ingredients.IngredientSearchService.get_popular_ingredients')
-def test_get_popular_ingredients_empty(mock_get_popular, mock_get_db, mock_get_user_id, client, mock_db, mock_user_id):
+def test_get_popular_ingredients_empty(mock_get_popular, mock_get_db, client, mock_db, auth_headers):
     """Edge case: No popular ingredients should return empty list"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     mock_get_popular.return_value = []
 
-    response = client.get("/ingredients/popular")
+    response = client.get("/ingredients/popular", headers=auth_headers)
 
     assert response.status_code == 200
     assert response.json() == []
 
 
-@patch('app.routers.ingredients.get_current_user_id')
 @patch('app.routers.ingredients.get_db')
 @patch('app.routers.ingredients.IngredientSearchService.get_popular_ingredients')
-def test_get_popular_ingredients_custom_limit(mock_get_popular, mock_get_db, mock_get_user_id, client, mock_db, mock_user_id):
+def test_get_popular_ingredients_custom_limit(mock_get_popular, mock_get_db, client, mock_db, auth_headers):
     """Full context: Custom limit parameter"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     mock_get_popular.return_value = [
@@ -366,52 +336,46 @@ def test_get_popular_ingredients_custom_limit(mock_get_popular, mock_get_db, moc
         }
     ]
 
-    response = client.get("/ingredients/popular?limit=10")
+    response = client.get("/ingredients/popular?limit=10", headers=auth_headers)
 
     assert response.status_code == 200
     mock_get_popular.assert_called_once_with(mock_db, limit=10)
 
 
-@patch('app.routers.ingredients.get_current_user_id')
 @patch('app.routers.ingredients.get_db')
 @patch('app.routers.ingredients.IngredientSearchService.get_popular_ingredients')
-def test_get_popular_ingredients_max_limit(mock_get_popular, mock_get_db, mock_get_user_id, client, mock_db, mock_user_id):
+def test_get_popular_ingredients_max_limit(mock_get_popular, mock_get_db, client, mock_db, auth_headers):
     """Edge case: Limit exceeds maximum should be rejected"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
-    response = client.get("/ingredients/popular?limit=300")
+    response = client.get("/ingredients/popular?limit=300", headers=auth_headers)
 
     assert response.status_code == 422
 
 
-@patch('app.routers.ingredients.get_current_user_id')
 @patch('app.routers.ingredients.get_db')
 @patch('app.routers.ingredients.IngredientSearchService.get_popular_ingredients')
-def test_get_popular_ingredients_service_error(mock_get_popular, mock_get_db, mock_get_user_id, client, mock_db, mock_user_id):
+def test_get_popular_ingredients_service_error(mock_get_popular, mock_get_db, client, mock_db, auth_headers):
     """Error handling: Service error should return 500"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     mock_get_popular.side_effect = Exception("Database connection failed")
 
-    response = client.get("/ingredients/popular")
+    response = client.get("/ingredients/popular", headers=auth_headers)
 
     assert response.status_code == 500
     assert "Failed to fetch popular ingredients" in response.json()['detail']
 
 
-@patch('app.routers.ingredients.get_current_user_id')
 @patch('app.routers.ingredients.get_db')
 @patch('app.routers.ingredients.IngredientSearchService.get_popular_ingredients')
-def test_get_popular_ingredients_default_limit(mock_get_popular, mock_get_db, mock_get_user_id, client, mock_db, mock_user_id):
+def test_get_popular_ingredients_default_limit(mock_get_popular, mock_get_db, client, mock_db, auth_headers):
     """Full context: Default limit is 100"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     mock_get_popular.return_value = []
 
-    response = client.get("/ingredients/popular")
+    response = client.get("/ingredients/popular", headers=auth_headers)
 
     assert response.status_code == 200
     mock_get_popular.assert_called_once_with(mock_db, limit=100)

@@ -53,12 +53,10 @@ def sample_receipt_id():
 # ============================================================
 
 
-@patch('app.routers.receipts.get_current_user_id')
 @patch('app.routers.receipts.get_db')
 @patch('app.routers.receipts.ReceiptParser.parse_receipt_text')
-def test_process_receipt_success(mock_parse, mock_get_db, mock_get_user_id, client, mock_db, mock_user_id):
+def test_process_receipt_success(mock_parse, mock_get_db, client, mock_db, auth_headers):
     """Full context: Process valid receipt OCR text"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     # Mock parsed receipt data
@@ -82,7 +80,7 @@ def test_process_receipt_success(mock_parse, mock_get_db, mock_get_user_id, clie
     response = client.post(
         "/receipts/process",
         json={"ocr_text": "WALMART\n12/25/2024\nMilk $3.99\nEggs $4.49\nTOTAL: $8.48"}
-    )
+    , headers=auth_headers)
 
     assert response.status_code == 200
     data = response.json()
@@ -93,28 +91,24 @@ def test_process_receipt_success(mock_parse, mock_get_db, mock_get_user_id, clie
     assert 'receipt_id' in data
 
 
-@patch('app.routers.receipts.get_current_user_id')
 @patch('app.routers.receipts.get_db')
-def test_process_receipt_empty_text(mock_get_db, mock_get_user_id, client, mock_db, mock_user_id):
+def test_process_receipt_empty_text(mock_get_db, client, mock_db, auth_headers):
     """Edge case: Empty OCR text should return 400"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     response = client.post(
         "/receipts/process",
         json={"ocr_text": ""}
-    )
+    , headers=auth_headers)
 
     assert response.status_code == 400
     assert "cannot be empty" in response.json()['detail'].lower()
 
 
-@patch('app.routers.receipts.get_current_user_id')
 @patch('app.routers.receipts.get_db')
 @patch('app.routers.receipts.ReceiptParser.parse_receipt_text')
-def test_process_receipt_parse_error(mock_parse, mock_get_db, mock_get_user_id, client, mock_db, mock_user_id):
+def test_process_receipt_parse_error(mock_parse, mock_get_db, client, mock_db, auth_headers):
     """Error handling: Parsing failure should return 400"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     mock_parse.side_effect = ValueError("Invalid receipt format")
@@ -122,18 +116,16 @@ def test_process_receipt_parse_error(mock_parse, mock_get_db, mock_get_user_id, 
     response = client.post(
         "/receipts/process",
         json={"ocr_text": "invalid text"}
-    )
+    , headers=auth_headers)
 
     assert response.status_code == 400
     assert "Invalid receipt format" in response.json()['detail']
 
 
-@patch('app.routers.receipts.get_current_user_id')
 @patch('app.routers.receipts.get_db')
 @patch('app.routers.receipts.ReceiptParser.parse_receipt_text')
-def test_process_receipt_database_error(mock_parse, mock_get_db, mock_get_user_id, client, mock_db, mock_user_id):
+def test_process_receipt_database_error(mock_parse, mock_get_db, client, mock_db, auth_headers):
     """Error handling: Database error should return 500"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     mock_parse.return_value = {
@@ -150,7 +142,7 @@ def test_process_receipt_database_error(mock_parse, mock_get_db, mock_get_user_i
     response = client.post(
         "/receipts/process",
         json={"ocr_text": "WALMART\nTOTAL: $10"}
-    )
+    , headers=auth_headers)
 
     assert response.status_code == 500
     assert "Failed to process receipt" in response.json()['detail']
@@ -161,12 +153,10 @@ def test_process_receipt_database_error(mock_parse, mock_get_db, mock_get_user_i
 # ============================================================
 
 
-@patch('app.routers.receipts.get_current_user_id')
 @patch('app.routers.receipts.get_db')
 @patch('app.routers.receipts.AnalyticsService.update_monthly_analytics')
-def test_confirm_receipt_success(mock_analytics, mock_get_db, mock_get_user_id, client, mock_db, mock_user_id, sample_receipt_id):
+def test_confirm_receipt_success(mock_analytics, mock_get_db, client, mock_db, mock_user_id, sample_receipt_id, auth_headers):
     """Full context: Confirm valid receipt and add to pantry"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     # Mock receipt from database
@@ -192,7 +182,7 @@ def test_confirm_receipt_success(mock_analytics, mock_get_db, mock_get_user_id, 
     response = client.post(
         "/receipts/confirm",
         json={"receipt_id": sample_receipt_id}
-    )
+    , headers=auth_headers)
 
     assert response.status_code == 201
     data = response.json()
@@ -202,11 +192,9 @@ def test_confirm_receipt_success(mock_analytics, mock_get_db, mock_get_user_id, 
     mock_analytics.assert_called_once()
 
 
-@patch('app.routers.receipts.get_current_user_id')
 @patch('app.routers.receipts.get_db')
-def test_confirm_receipt_not_found(mock_get_db, mock_get_user_id, client, mock_db, mock_user_id):
+def test_confirm_receipt_not_found(mock_get_db, client, mock_db, auth_headers):
     """Edge case: Receipt not found should return 404"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     mock_query = Mock()
@@ -215,18 +203,17 @@ def test_confirm_receipt_not_found(mock_get_db, mock_get_user_id, client, mock_d
 
     response = client.post(
         "/receipts/confirm",
-        json={"receipt_id": str(uuid.uuid4())}
+        json={"receipt_id": str(uuid.uuid4())},
+        headers=auth_headers
     )
 
     assert response.status_code == 404
     assert "not found" in response.json()['detail'].lower()
 
 
-@patch('app.routers.receipts.get_current_user_id')
 @patch('app.routers.receipts.get_db')
-def test_confirm_receipt_wrong_user(mock_get_db, mock_get_user_id, client, mock_db, mock_user_id, sample_receipt_id):
+def test_confirm_receipt_wrong_user(mock_get_db, client, mock_db, mock_user_id, sample_receipt_id, auth_headers):
     """Edge case: Receipt belongs to different user should return 403"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     # Mock receipt from different user
@@ -242,17 +229,15 @@ def test_confirm_receipt_wrong_user(mock_get_db, mock_get_user_id, client, mock_
     response = client.post(
         "/receipts/confirm",
         json={"receipt_id": sample_receipt_id}
-    )
+    , headers=auth_headers)
 
     assert response.status_code == 403
     assert "different user" in response.json()['detail'].lower()
 
 
-@patch('app.routers.receipts.get_current_user_id')
 @patch('app.routers.receipts.get_db')
-def test_confirm_receipt_already_processed(mock_get_db, mock_get_user_id, client, mock_db, mock_user_id, sample_receipt_id):
+def test_confirm_receipt_already_processed(mock_get_db, client, mock_db, mock_user_id, sample_receipt_id, auth_headers):
     """Edge case: Receipt already processed should return 409"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     mock_receipt = Mock()
@@ -267,18 +252,16 @@ def test_confirm_receipt_already_processed(mock_get_db, mock_get_user_id, client
     response = client.post(
         "/receipts/confirm",
         json={"receipt_id": sample_receipt_id}
-    )
+    , headers=auth_headers)
 
     assert response.status_code == 409
     assert "already been processed" in response.json()['detail'].lower()
 
 
-@patch('app.routers.receipts.get_current_user_id')
 @patch('app.routers.receipts.get_db')
 @patch('app.routers.receipts.AnalyticsService.update_monthly_analytics')
-def test_confirm_receipt_with_corrections(mock_analytics, mock_get_db, mock_get_user_id, client, mock_db, mock_user_id, sample_receipt_id):
+def test_confirm_receipt_with_corrections(mock_analytics, mock_get_db, client, mock_db, mock_user_id, sample_receipt_id, auth_headers):
     """Full context: User corrects receipt data before confirming"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     mock_receipt = Mock()
@@ -310,7 +293,7 @@ def test_confirm_receipt_with_corrections(mock_analytics, mock_get_db, mock_get_
             ],
             "notes": "User correction"
         }
-    )
+    , headers=auth_headers)
 
     assert response.status_code == 201
     assert mock_receipt.merchant_name == "Corrected Store"
@@ -319,12 +302,10 @@ def test_confirm_receipt_with_corrections(mock_analytics, mock_get_db, mock_get_
     assert len(mock_receipt.line_items) == 1
 
 
-@patch('app.routers.receipts.get_current_user_id')
 @patch('app.routers.receipts.get_db')
 @patch('app.routers.receipts.AnalyticsService.update_monthly_analytics')
-def test_confirm_receipt_empty_line_items(mock_analytics, mock_get_db, mock_get_user_id, client, mock_db, mock_user_id, sample_receipt_id):
+def test_confirm_receipt_empty_line_items(mock_analytics, mock_get_db, client, mock_db, mock_user_id, sample_receipt_id, auth_headers):
     """Edge case: Empty line items should still process successfully"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     mock_receipt = Mock()
@@ -346,7 +327,7 @@ def test_confirm_receipt_empty_line_items(mock_analytics, mock_get_db, mock_get_
     response = client.post(
         "/receipts/confirm",
         json={"receipt_id": sample_receipt_id}
-    )
+    , headers=auth_headers)
 
     assert response.status_code == 201
     data = response.json()
@@ -358,11 +339,9 @@ def test_confirm_receipt_empty_line_items(mock_analytics, mock_get_db, mock_get_
 # ============================================================
 
 
-@patch('app.routers.receipts.get_current_user_id')
 @patch('app.routers.receipts.get_db')
-def test_get_receipts_success(mock_get_db, mock_get_user_id, client, mock_db, mock_user_id):
+def test_get_receipts_success(mock_get_db, client, mock_db, auth_headers):
     """Full context: Get all user receipts"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     # Mock receipts
@@ -380,7 +359,7 @@ def test_get_receipts_success(mock_get_db, mock_get_user_id, client, mock_db, mo
     mock_query.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [mock_receipt1]
     mock_db.query.return_value = mock_query
 
-    response = client.get("/receipts")
+    response = client.get("/receipts", headers=auth_headers)
 
     assert response.status_code == 200
     data = response.json()
@@ -388,28 +367,24 @@ def test_get_receipts_success(mock_get_db, mock_get_user_id, client, mock_db, mo
     assert data[0]['merchant_name'] == 'Walmart'
 
 
-@patch('app.routers.receipts.get_current_user_id')
 @patch('app.routers.receipts.get_db')
-def test_get_receipts_empty(mock_get_db, mock_get_user_id, client, mock_db, mock_user_id):
+def test_get_receipts_empty(mock_get_db, client, mock_db, auth_headers):
     """Edge case: No receipts should return empty list"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     mock_query = Mock()
     mock_query.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
     mock_db.query.return_value = mock_query
 
-    response = client.get("/receipts")
+    response = client.get("/receipts", headers=auth_headers)
 
     assert response.status_code == 200
     assert response.json() == []
 
 
-@patch('app.routers.receipts.get_current_user_id')
 @patch('app.routers.receipts.get_db')
-def test_get_receipts_filter_unprocessed(mock_get_db, mock_get_user_id, client, mock_db, mock_user_id):
+def test_get_receipts_filter_unprocessed(mock_get_db, client, mock_db, auth_headers):
     """Full context: Filter only unprocessed receipts"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     mock_query = Mock()
@@ -417,7 +392,7 @@ def test_get_receipts_filter_unprocessed(mock_get_db, mock_get_user_id, client, 
     mock_query.order_by.return_value.limit.return_value.all.return_value = []
     mock_db.query.return_value = mock_query
 
-    response = client.get("/receipts?include_processed=false")
+    response = client.get("/receipts?include_processed=false", headers=auth_headers)
 
     assert response.status_code == 200
 
@@ -427,11 +402,9 @@ def test_get_receipts_filter_unprocessed(mock_get_db, mock_get_user_id, client, 
 # ============================================================
 
 
-@patch('app.routers.receipts.get_current_user_id')
 @patch('app.routers.receipts.get_db')
-def test_delete_receipt_success(mock_get_db, mock_get_user_id, client, mock_db, mock_user_id, sample_receipt_id):
+def test_delete_receipt_success(mock_get_db, client, mock_db, mock_user_id, sample_receipt_id, auth_headers):
     """Full context: Successfully delete receipt"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     mock_receipt = Mock()
@@ -445,34 +418,30 @@ def test_delete_receipt_success(mock_get_db, mock_get_user_id, client, mock_db, 
     mock_db.delete = Mock()
     mock_db.commit = Mock()
 
-    response = client.delete(f"/receipts/{sample_receipt_id}")
+    response = client.delete(f"/receipts/{sample_receipt_id}", headers=auth_headers)
 
     assert response.status_code == 200
     assert response.json()['status'] == 'success'
     mock_db.delete.assert_called_once_with(mock_receipt)
 
 
-@patch('app.routers.receipts.get_current_user_id')
 @patch('app.routers.receipts.get_db')
-def test_delete_receipt_not_found(mock_get_db, mock_get_user_id, client, mock_db, mock_user_id):
+def test_delete_receipt_not_found(mock_get_db, client, mock_db, auth_headers):
     """Edge case: Delete non-existent receipt should return 404"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     mock_query = Mock()
     mock_query.filter.return_value.first.return_value = None
     mock_db.query.return_value = mock_query
 
-    response = client.delete(f"/receipts/{uuid.uuid4()}")
+    response = client.delete(f"/receipts/{uuid.uuid4()}", headers=auth_headers)
 
     assert response.status_code == 404
 
 
-@patch('app.routers.receipts.get_current_user_id')
 @patch('app.routers.receipts.get_db')
-def test_delete_receipt_wrong_user(mock_get_db, mock_get_user_id, client, mock_db, mock_user_id, sample_receipt_id):
+def test_delete_receipt_wrong_user(mock_get_db, client, mock_db, mock_user_id, sample_receipt_id, auth_headers):
     """Edge case: Delete other user's receipt should return 403"""
-    mock_get_user_id.return_value = mock_user_id
     mock_get_db.return_value = mock_db
 
     mock_receipt = Mock()
@@ -483,6 +452,6 @@ def test_delete_receipt_wrong_user(mock_get_db, mock_get_user_id, client, mock_d
     mock_query.filter.return_value.first.return_value = mock_receipt
     mock_db.query.return_value = mock_query
 
-    response = client.delete(f"/receipts/{sample_receipt_id}")
+    response = client.delete(f"/receipts/{sample_receipt_id}", headers=auth_headers)
 
     assert response.status_code == 403

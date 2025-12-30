@@ -16,7 +16,8 @@ Product Manager Note:
 - Updated when users search for new ingredients
 """
 
-from sqlalchemy import Column, String, Integer, DateTime, UUID as SQLUUID, JSONB
+from sqlalchemy import Column, String, Integer, DateTime, UUID as SQLUUID
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from app.database import Base
 import uuid
@@ -37,7 +38,7 @@ class IngredientCache(Base):
         barcode (str, optional): Product barcode if known from OpenFoodFacts
         popularity (int): Usage count across all users (higher = more popular)
         source (str): Data source, defaults to 'openfoodfacts'
-        metadata (dict): Additional JSON data (brands, images, nutritional info, etc.)
+        extra_data (dict): Additional JSON data (brands, images, nutritional info, etc.)
         created_at (datetime): When this cache entry was created
         last_updated (datetime): Last time this entry was modified
 
@@ -70,7 +71,7 @@ class IngredientCache(Base):
     source = Column(String, default='openfoodfacts')  # Where this data came from
 
     # Additional metadata (brands, images, nutritional info)
-    metadata = Column(JSONB)  # Flexible JSON storage
+    extra_data = Column(JSONB)  # Flexible JSON storage (renamed from 'metadata' to avoid SQLAlchemy conflict)
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -96,7 +97,7 @@ class IngredientCache(Base):
                 - barcode (str|None): Product barcode if available
                 - popularity (int): Usage count
                 - source (str): Data source
-                - metadata (dict|None): Additional JSON data
+                - extra_data (dict|None): Additional JSON data
 
         Example:
             >>> ingredient = IngredientCache(
@@ -113,7 +114,7 @@ class IngredientCache(Base):
                 "barcode": None,
                 "popularity": 0,
                 "source": "openfoodfacts",
-                "metadata": None
+                "extra_data": None
             }
         """
         return {
@@ -124,5 +125,5 @@ class IngredientCache(Base):
             "barcode": self.barcode,
             "popularity": self.popularity,
             "source": self.source,
-            "metadata": self.metadata,
+            "extra_data": self.extra_data,
         }

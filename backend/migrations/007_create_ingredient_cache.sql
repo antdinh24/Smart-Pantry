@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS ingredient_cache (
     barcode TEXT,                            -- if known from OpenFoodFacts
     popularity INT DEFAULT 0,                -- usage count across all users
     source TEXT DEFAULT 'openfoodfacts',     -- where data came from
-    metadata JSONB,                          -- additional info (brands, images, etc.)
+    extra_data JSONB,                        -- additional info (brands, images, etc.)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     last_updated TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
