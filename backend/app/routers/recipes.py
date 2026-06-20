@@ -27,6 +27,7 @@ from app.middleware.auth import get_current_user_id
 from app.services.recipes import RecipeService
 from app.services.recipe_similarity import RecipeSimilarityService
 from app.services.pantry import PantryService
+from app.services.usage import UsageService
 
 router = APIRouter()
 
@@ -173,6 +174,13 @@ async def generate_recipe(
     Returns:
         Recipe with cache metadata
     """
+    # Check the recipe generation limit BEFORE calling OpenAI.
+    # This raises 429 immediately if the user has used all 10 free generations
+    # this month. Cache hits don't count toward the limit — only real OpenAI
+    # calls do — but we check here as a conservative gate. If the result turns
+    # out to be a cache hit, we don't increment the counter below.
+    UsageService.check_recipe_limit(db, user_id)
+
     try:
         result = RecipeService.generate_or_find_recipe(
             db=db,
@@ -180,6 +188,12 @@ async def generate_recipe(
             ingredients=request.ingredients,
             preferences=request.preferences
         )
+
+        # Only increment the counter when GPT-4o was actually called.
+        # from_cache=True means the recipe came from the shared cache (free),
+        # so it does NOT count against the user's 10/month limit.
+        if not result['from_cache']:
+            UsageService.increment_recipe_generations(db, user_id)
 
         return GenerateRecipeResponse(
             recipe=RecipeResponse(**result['recipe']),
@@ -189,6 +203,9 @@ async def generate_recipe(
             message=result['message']
         )
 
+    except HTTPException:
+        # Re-raise 429 from UsageService unchanged
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

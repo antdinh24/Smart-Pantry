@@ -7,7 +7,8 @@ export default function HomeScreen() {
   const navigation = useNavigation()
   const { stats } = usePantry()
   
-  const expiringItemsNames = stats.expiringItems.slice(0, 3).map(item => item.name).join(", ")
+  /* ingredient_name replaces the old "name" field — take first 3 expiring items for the alert */
+  const expiringItemsNames = stats.expiringItems.slice(0, 3).map(item => item.ingredient_name).join(", ")
 
   return (
     <SafeAreaView style={styles.container}>

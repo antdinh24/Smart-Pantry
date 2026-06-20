@@ -26,8 +26,10 @@ from app.models.receipt import Receipt
 from app.models.pantry import PantryItem
 from app.middleware.auth import get_current_user_id
 from app.services.receipt_parser import ReceiptParser
+from app.services.receipt_scanner import ReceiptScannerService
 from app.services.analytics import AnalyticsService
 from app.services.pantry import PantryService
+from app.services.usage import UsageService
 import uuid
 
 router = APIRouter()
@@ -36,6 +38,21 @@ router = APIRouter()
 # ============================================================
 # REQUEST/RESPONSE SCHEMAS
 # ============================================================
+
+
+class ScanReceiptRequest(BaseModel):
+    """
+    Request body for POST /receipts/scan.
+
+    The frontend captures a photo with expo-camera, converts it to base64,
+    and sends just the base64 string here (no data URL prefix needed).
+    The backend adds the data URL prefix before calling GPT-4o vision.
+    """
+    image_base64: str = Field(
+        ...,
+        min_length=100,  # A real image will always be longer than this
+        description="Base64-encoded JPEG receipt image (no data URL prefix)",
+    )
 
 
 class ProcessReceiptRequest(BaseModel):
@@ -110,6 +127,111 @@ class ReceiptResponse(BaseModel):
 # ============================================================
 # ENDPOINTS
 # ============================================================
+
+
+@router.post("/scan", status_code=status.HTTP_200_OK, response_model=ProcessReceiptResponse)
+async def scan_receipt(
+    request: ScanReceiptRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """
+    Scan a receipt image using GPT-4o vision and return parsed line items.
+
+    This is the primary receipt entry point for the mobile app. It replaces
+    the two-step flow of (OCR on device → POST /process) with a single call:
+        1. Check the user's monthly scan limit (8 free scans)
+        2. Send the image to GPT-4o vision to extract raw text
+        3. Parse the text with ReceiptParser (merchant, date, items, total)
+        4. Save a pending receipt record in the database
+        5. Increment the usage counter
+        6. Return the parsed data for display on the confirmation screen
+
+    WHY increment AFTER the GPT-4o call succeeds?
+        If the API call fails (network error, OpenAI down), the user should
+        not lose a scan from their monthly allowance. The counter only goes
+        up when we actually got useful data back.
+
+    Args:
+        request: Base64-encoded receipt image
+        user_id: Authenticated user ID (from JWT token)
+        db: Database session
+
+    Returns:
+        Parsed receipt data — same shape as POST /receipts/process so the
+        frontend can use the same ReceiptConfirmScreen for both flows.
+
+    Raises:
+        429: User has hit their monthly scan limit
+        400: Image is unreadable or parsing produced no useful data
+        500: GPT-4o API error or unexpected failure
+    """
+    # Step 1: Check limit before doing anything expensive.
+    # Raises 429 immediately if the user is at their limit.
+    UsageService.check_receipt_limit(db, user_id)
+
+    try:
+        # Step 2: Send image to GPT-4o vision, get back raw receipt text.
+        # This is the only call that costs money per scan (~$0.01–$0.03).
+        ocr_text = ReceiptScannerService.scan_image(request.image_base64)
+
+        # Step 3: Parse the raw text into structured data using the existing parser.
+        # ReceiptParser handles merchant detection, date parsing, item extraction, etc.
+        parsed_data = ReceiptParser.parse_receipt_text(ocr_text, db)
+
+        # Step 4: Save a pending receipt record so /receipts/confirm can find it later.
+        # The receipt is not yet "processed" — that happens when the user confirms.
+        receipt = Receipt(
+            id=uuid.uuid4(),
+            user_id=uuid.UUID(user_id),
+            merchant_name=parsed_data.get("merchant_name"),
+            purchase_date=parsed_data.get("purchase_date"),
+            total_amount=parsed_data.get("total_amount", 0.0),
+            currency=parsed_data.get("currency", "USD"),
+            line_items=parsed_data.get("line_items", []),
+            ocr_confidence=parsed_data.get("confidence"),
+            processed=False,
+            notes=None,
+        )
+        db.add(receipt)
+        db.commit()
+        db.refresh(receipt)
+
+        # Step 5: Increment usage counter now that we've successfully scanned.
+        # Doing this after the DB commit ensures the receipt exists before we
+        # record the usage — avoids counting a scan that failed to persist.
+        UsageService.increment_receipt_scans(db, user_id)
+
+        # Step 6: Return the same response shape as /receipts/process so the
+        # frontend ReceiptConfirmScreen works identically for both entry points.
+        return ProcessReceiptResponse(
+            receipt_id=str(receipt.id),
+            merchant_name=parsed_data.get("merchant_name"),
+            purchase_date=(
+                parsed_data["purchase_date"].isoformat()
+                if parsed_data.get("purchase_date")
+                else None
+            ),
+            total_amount=parsed_data.get("total_amount", 0.0),
+            currency=parsed_data.get("currency", "USD"),
+            line_items=parsed_data.get("line_items", []),
+            confidence=parsed_data.get("confidence", 0.0),
+            message="Receipt scanned successfully. Please verify the items below.",
+        )
+
+    except HTTPException:
+        # Re-raise 429 and other HTTP exceptions from UsageService unchanged
+        raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to scan receipt: {str(e)}",
+        )
 
 
 @router.post("/process", status_code=status.HTTP_200_OK, response_model=ProcessReceiptResponse)

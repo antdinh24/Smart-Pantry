@@ -116,10 +116,20 @@ export const APIService = {
   // ============================================================
 
   /**
-   * Generate AI recipe from pantry
+   * generateRecipe
+   *
+   * Asks the backend to generate (or return a cached) recipe based on a list
+   * of ingredient names. The backend requires at least one ingredient.
+   *
+   * The response includes the full recipe AND cache metadata (from_cache,
+   * api_call_saved) so the caller knows whether an OpenAI call was made.
+   *
+   * @param ingredients - Array of ingredient name strings from the user's pantry
+   * @param preferences - Optional hints like { cuisine: "Italian", difficulty: "easy" }
    */
-  generateRecipe: async (preferences?: any) => {
+  generateRecipe: async (ingredients: string[], preferences?: Record<string, any>) => {
     const { data } = await apiClient.post('/recipes/generate', {
+      ingredients,
       preferences,
     })
     return data
@@ -160,6 +170,50 @@ export const APIService = {
   // ============================================================
   // RECEIPT ENDPOINTS
   // ============================================================
+
+  /**
+   * scanReceipt
+   *
+   * Sends a base64-encoded receipt image to the backend, which uses GPT-4o
+   * vision to extract the text and parse it into structured line items.
+   *
+   * The response has the same shape as processReceipt — both return a
+   * receipt_id, merchant_name, line_items, total_amount, and confidence score.
+   * ReceiptConfirmScreen uses this data to show the confirmation checklist.
+   *
+   * Usage limit: 8 scans/month on the free tier. The backend returns HTTP 429
+   * with a user-friendly message when the limit is hit. The caller should
+   * catch this and show the upgrade prompt instead of an error alert.
+   *
+   * @param imageBase64 - Base64 string of the receipt photo (no data URL prefix)
+   */
+  scanReceipt: async (imageBase64: string) => {
+    const { data } = await apiClient.post('/receipts/scan', {
+      image_base64: imageBase64,
+    })
+    return data
+  },
+
+  /**
+   * confirmReceipt
+   *
+   * Confirms a pending receipt and adds the selected items to the pantry.
+   * Called when the user taps "Add X Items to Pantry" on ReceiptConfirmScreen.
+   *
+   * The backend marks the receipt as processed and adds each line item
+   * to the user's pantry, then updates monthly analytics.
+   *
+   * @param receiptId - UUID of the pending receipt record (from scanReceipt response)
+   * @param lineItems - The user-confirmed (and potentially edited) list of items.
+   *                    Only selected items should be included in this array.
+   */
+  confirmReceipt: async (receiptId: string, lineItems: any[]) => {
+    const { data } = await apiClient.post('/receipts/confirm', {
+      receipt_id: receiptId,
+      line_items: lineItems,
+    })
+    return data
+  },
 
   /**
    * Process receipt OCR text

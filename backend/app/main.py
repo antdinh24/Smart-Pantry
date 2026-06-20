@@ -60,6 +60,13 @@ async def health_check():
     }
 
 
+# Import models so SQLAlchemy's Base.metadata knows about all tables.
+# This is required for create_all() to include the user_usage table.
+# NOTE: The user_usage table must also be created via a database migration
+# before deploying — SQLAlchemy won't auto-create it in production unless
+# you call Base.metadata.create_all(engine) explicitly.
+from app.models import user_usage  # noqa: F401 — import for side effect only
+
 # Register API routers
 from app.routers import auth, pantry, recipes, receipts, ingredients, analytics
 

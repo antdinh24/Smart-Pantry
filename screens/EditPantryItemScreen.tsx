@@ -1,31 +1,30 @@
 /**
- * AddIngredientsScreen.tsx
+ * EditPantryItemScreen.tsx
  *
  * PURPOSE:
- *   A form screen for manually adding a new item to the pantry.
- *   Reached by tapping the "+" button on PantryScreen.
+ *   Lets the user edit the details of an existing pantry item, or delete it.
+ *   Reached by long-pressing an item card on PantryScreen and tapping "Edit".
  *
- * WHAT CHANGED FROM THE OLD VERSION:
- *   The old screen showed a list of existing pantry items with checkboxes —
- *   which didn't make sense for "adding" items. This rewrite is a proper
- *   input form with fields matching the backend's PantryItem schema.
+ * HOW IT WORKS:
+ *   1. Gets the item ID from navigation route params.
+ *   2. Looks up the live item from PantryContext using getItemById(itemId).
+ *   3. Pre-fills all form fields with the item's current values.
+ *   4. On "Save Changes", calls PantryContext.updateItem() → PUT /pantry/:id.
+ *   5. On "Delete Item", asks for confirmation then calls PantryContext.deleteItem()
+ *      → DELETE /pantry/:id.
+ *   6. Both success paths navigate back to PantryScreen.
+ *
+ * WHY pass only itemId (not the full item) in route params?
+ *   If the user edits an item, then immediately comes back to edit again,
+ *   passing the full item object would show stale data. Passing just the ID
+ *   and reading from context always gives the current value.
  *
  * FIELDS:
- *   - Ingredient name (required text input)
- *   - Quantity (required numeric input)
- *   - Unit (horizontal chip selector — e.g. "count", "g", "L")
- *   - Category (grid chip selector — e.g. "produce", "dairy")
- *   - Expiration date (optional text input, accepts "YYYY-MM-DD" or blank)
- *
- * DATA FLOW:
- *   User fills form → taps "Add to Pantry"
- *     → calls PantryContext.addItem() (POST /pantry + updates local state)
- *       → navigates back to PantryScreen
- *
- * WHY use PantryContext.addItem() instead of APIService directly?
- *   PantryContext keeps an in-memory list of all pantry items. Calling addItem()
- *   updates that list immediately, so PantryScreen shows the new item as soon
- *   as the user returns — no refresh needed.
+ *   - Ingredient name (required)
+ *   - Quantity (required numeric)
+ *   - Unit (horizontal chip selector)
+ *   - Category (grid chip selector)
+ *   - Expiration date (optional, YYYY-MM-DD)
  */
 
 import { useState } from "react"
@@ -43,12 +42,25 @@ import {
   Platform,
 } from "react-native"
 import Icon from "react-native-vector-icons/Feather"
-import { useNavigation } from "@react-navigation/native"
+import { useNavigation, useRoute, RouteProp } from "@react-navigation/native"
 import { usePantry } from "../hooks/usePantry"
+import { RootStackParamList } from "../types/navigation"
+import { NativeStackNavigationProp } from "@react-navigation/native-stack"
+
+/** Route prop type so TypeScript knows exactly which params this screen receives */
+type EditPantryItemRouteProp = RouteProp<RootStackParamList, "EditPantryItem">
 
 /**
- * CATEGORIES — matches the backend's PantryService.categorize_ingredient() values.
- * If the backend adds or renames categories, update this list to match.
+ * Navigation prop type — typed to RootStackParamList so we can call
+ * navigation.pop(2), which is not available on the untyped useNavigation() return.
+ * pop(n) removes n screens from the stack at once. We need this after deletion
+ * to jump past EditPantryItemScreen back to PantryScreen in one step.
+ */
+type EditPantryItemNavProp = NativeStackNavigationProp<RootStackParamList, "EditPantryItem">
+
+/**
+ * CATEGORIES — same set as AddIngredientsScreen.
+ * Must stay in sync with the backend's PantryService.categorize_ingredient() values.
  */
 const CATEGORIES = [
   "pantry",
@@ -62,61 +74,104 @@ const CATEGORIES = [
 ]
 
 /**
- * UNITS — common measurement units for pantry items.
- * "count" is the default for whole items (apples, cans, eggs).
- * The rest cover weight and volume.
+ * UNITS — same set as AddIngredientsScreen.
+ * "count" covers whole items; the rest cover weight and volume.
  */
 const UNITS = ["count", "g", "kg", "mL", "L", "oz", "lb", "package"]
 
-export default function AddIngredientsScreen() {
-  const navigation = useNavigation()
+export default function EditPantryItemScreen() {
+  const navigation = useNavigation<EditPantryItemNavProp>()
+  const route = useRoute<EditPantryItemRouteProp>()
 
   /**
-   * addItem from PantryContext — calls POST /pantry AND updates the in-memory list.
-   * We use this instead of APIService directly so PantryScreen stays in sync.
+   * itemId comes from PantryScreen via navigation.navigate("EditPantryItem", { itemId })
+   * We use it to look up the live item from context below.
    */
-  const { addItem } = usePantry()
+  const { itemId } = route.params
+
+  const { getItemById, updateItem, deleteItem } = usePantry()
+
+  /**
+   * item — the current data for this pantry entry.
+   * We read it once here to populate the initial form state.
+   *
+   * If the item is not found (e.g. it was deleted before this screen opened),
+   * we show an error and let the user go back.
+   */
+  const item = getItemById(itemId)
 
   // ── Form field state ──────────────────────────────────────────────────────
+  // All initialised from the existing item's values.
 
-  /** The ingredient name the user types, e.g. "Whole Milk" */
-  const [name, setName] = useState("")
-
-  /**
-   * Quantity stored as a string because TextInput works with strings.
-   * Parsed to a float in handleSubmit just before calling addItem().
-   */
-  const [quantity, setQuantity] = useState("1")
-
-  /** Selected unit — defaults to "count" for most manually-entered items */
-  const [unit, setUnit] = useState("count")
-
-  /** Selected category — defaults to "pantry" (the catch-all category) */
-  const [category, setCategory] = useState("pantry")
+  const [name, setName] = useState(item?.ingredient_name ?? "")
 
   /**
-   * Expiration date — optional. User enters in YYYY-MM-DD format.
-   * Left empty if the item doesn't expire (e.g. salt, spices).
-   * The backend accepts null for expiration_date.
+   * Quantity is stored as a string because TextInput works with strings.
+   * We convert item.quantity (number) to string for initial display,
+   * then parse it back to float in handleSave before calling updateItem.
    */
-  const [expirationDate, setExpirationDate] = useState("")
+  const [quantity, setQuantity] = useState(String(item?.quantity ?? "1"))
 
-  /** True while the addItem() API call is in flight — disables button and shows spinner */
+  /** Default to "count" if the item has no unit set */
+  const [unit, setUnit] = useState(item?.unit ?? "count")
+
+  /** Default to "pantry" if the item has no category set */
+  const [category, setCategory] = useState(item?.category ?? "pantry")
+
+  /** Keep the existing expiry date, or blank if none was set */
+  const [expirationDate, setExpirationDate] = useState(item?.expiration_date ?? "")
+
+  /** True while the PUT /pantry/:id API call is in flight */
   const [saving, setSaving] = useState(false)
 
+  /** True while the DELETE /pantry/:id API call is in flight */
+  const [deleting, setDeleting] = useState(false)
+
+  // ── Guard: item not found ─────────────────────────────────────────────────
+
   /**
-   * handleSubmit
+   * If getItemById returned undefined, the item doesn't exist in context.
+   * This can happen if:
+   *   - The item was just deleted by another action before this screen loaded
+   *   - The navigation params were incorrect
+   * Show a simple error view instead of crashing.
+   */
+  if (!item) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconButton}>
+            <Icon name="arrow-left" size={24} color="#f8fafc" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Edit Item</Text>
+          <View style={styles.iconButton} />
+        </View>
+        <View style={styles.notFound}>
+          <Icon name="alert-circle" size={48} color="#ef4444" />
+          <Text style={styles.notFoundText}>Item not found.</Text>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+            <Text style={styles.backButtonText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    )
+  }
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
+
+  /**
+   * handleSave
    *
-   * Validates the form, then calls PantryContext.addItem().
-   * On success: navigates back to PantryScreen.
-   * On failure: shows an error alert.
+   * Validates the form fields, then calls PantryContext.updateItem() which
+   * sends PUT /pantry/:id to the backend and updates local state on success.
+   * Navigates back to PantryScreen on success.
    *
    * VALIDATION:
    *   1. Name must not be blank
    *   2. Quantity must be a positive number
-   *   3. Expiration date (if provided) must match YYYY-MM-DD format
+   *   3. Expiration date (if provided) must be in YYYY-MM-DD format
    */
-  const handleSubmit = async () => {
+  const handleSave = async () => {
     // Guard: name is required
     if (!name.trim()) {
       Alert.alert("Name Required", "Please enter an ingredient name.")
@@ -130,7 +185,7 @@ export default function AddIngredientsScreen() {
       return
     }
 
-    // Guard: expiration date format (only if the user typed something)
+    // Guard: expiration date format check (only if user filled it in)
     if (expirationDate && !/^\d{4}-\d{2}-\d{2}$/.test(expirationDate)) {
       Alert.alert("Invalid Date", "Please enter the date as YYYY-MM-DD (e.g. 2025-06-30).")
       return
@@ -138,34 +193,70 @@ export default function AddIngredientsScreen() {
 
     setSaving(true)
     try {
-      await addItem({
+      await updateItem(itemId, {
         ingredient_name: name.trim(),
         quantity: qty,
         unit,
         category,
-        // Only pass expiration_date if the user entered something — otherwise omit it
-        // so the backend stores null rather than an empty string
-        ...(expirationDate ? { expiration_date: expirationDate } : {}),
+        // Pass null when cleared to tell the backend to remove the expiry date.
+        // An empty string would fail backend validation.
+        expiration_date: expirationDate || null,
       })
-
-      // Success — navigate back so the user sees the updated pantry list
       navigation.goBack()
     } catch {
-      Alert.alert("Error", "Failed to add item. Please try again.")
+      Alert.alert("Error", "Failed to save changes. Please try again.")
     } finally {
       setSaving(false)
     }
   }
 
+  /**
+   * handleDelete
+   *
+   * Shows a confirmation dialog before deleting to prevent accidental removals.
+   * On confirm: calls PantryContext.deleteItem() which sends DELETE /pantry/:id
+   * and removes the item from the local list on success.
+   *
+   * WHY two navigations (goBack twice)?
+   *   After deletion, going back once returns to EditPantryItemScreen (which
+   *   would now show "Item not found"). We need to go back twice to reach
+   *   PantryScreen. Using navigation.pop(2) handles this cleanly.
+   */
+  const handleDelete = () => {
+    Alert.alert(
+      "Delete Item",
+      `Remove "${item.ingredient_name}" from your pantry?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setDeleting(true)
+            try {
+              await deleteItem(itemId)
+              // pop(2) removes both EditPantryItemScreen AND the screen below
+              // it (PantryScreen would remain with one goBack, but EditPantryItem
+              // would show "Item not found"). We want to land on PantryScreen,
+              // which is two levels up the stack.
+              navigation.pop(2)
+            } catch {
+              Alert.alert("Error", "Failed to delete item. Please try again.")
+            } finally {
+              setDeleting(false)
+            }
+          },
+        },
+      ]
+    )
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
+
   return (
     <SafeAreaView style={styles.container}>
-      {/*
-       * KeyboardAvoidingView pushes the form up when the keyboard opens
-       * so the bottom fields don't get hidden behind it.
-       */}
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -175,8 +266,8 @@ export default function AddIngredientsScreen() {
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconButton}>
             <Icon name="arrow-left" size={24} color="#f8fafc" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Add Ingredient</Text>
-          {/* Empty spacer keeps the title visually centered */}
+          <Text style={styles.headerTitle}>Edit Item</Text>
+          {/* Spacer to keep title centered */}
           <View style={styles.iconButton} />
         </View>
 
@@ -189,7 +280,7 @@ export default function AddIngredientsScreen() {
           {/* ── Form card ── */}
           <View style={styles.card}>
 
-            {/* Name input — required */}
+            {/* Name */}
             <Text style={styles.label}>
               Ingredient Name <Text style={styles.required}>*</Text>
             </Text>
@@ -208,7 +299,7 @@ export default function AddIngredientsScreen() {
 
             {/* Quantity + Unit row */}
             <View style={styles.row}>
-              {/* Quantity — numeric, required */}
+              {/* Quantity */}
               <View style={styles.quantityField}>
                 <Text style={styles.label}>
                   Quantity <Text style={styles.required}>*</Text>
@@ -223,7 +314,7 @@ export default function AddIngredientsScreen() {
                 />
               </View>
 
-              {/* Unit — horizontal chip scroll */}
+              {/* Unit chips */}
               <View style={styles.unitField}>
                 <Text style={styles.label}>Unit</Text>
                 <ScrollView
@@ -267,7 +358,7 @@ export default function AddIngredientsScreen() {
               ))}
             </View>
 
-            {/* Expiration date — optional */}
+            {/* Expiration date */}
             <Text style={styles.label}>
               Expiration Date{" "}
               <Text style={styles.optional}>(optional)</Text>
@@ -282,37 +373,44 @@ export default function AddIngredientsScreen() {
                 placeholderTextColor="#475569"
                 keyboardType="numbers-and-punctuation"
                 returnKeyType="done"
-                maxLength={10} /* YYYY-MM-DD is exactly 10 characters */
+                maxLength={10}
               />
             </View>
 
-            {/* Submit button */}
+            {/* Save button */}
             <TouchableOpacity
-              style={[styles.primaryButton, saving && styles.primaryButtonDisabled]}
-              onPress={handleSubmit}
-              disabled={saving}
+              style={[styles.saveButton, saving && styles.buttonDisabled]}
+              onPress={handleSave}
+              disabled={saving || deleting}
             >
               {saving ? (
                 <ActivityIndicator size="small" color="#ffffff" />
               ) : (
                 <>
-                  <Icon name="plus" size={18} color="#ffffff" />
-                  <Text style={styles.primaryButtonText}>Add to Pantry</Text>
+                  <Icon name="check" size={18} color="#ffffff" />
+                  <Text style={styles.saveButtonText}>Save Changes</Text>
                 </>
               )}
             </TouchableOpacity>
           </View>
 
-          {/*
-           * Tip card — helps users understand the expiry date format
-           * and that most fields are optional.
-           */}
-          <View style={styles.tipCard}>
-            <Icon name="info" size={16} color="#64748b" />
-            <Text style={styles.tipText}>
-              Only the name and quantity are required. You can also scan a
-              barcode from the Pantry screen to auto-fill product details.
-            </Text>
+          {/* ── Delete section ── */}
+          <View style={styles.dangerCard}>
+            <Text style={styles.dangerLabel}>Danger Zone</Text>
+            <TouchableOpacity
+              style={[styles.deleteButton, deleting && styles.buttonDisabled]}
+              onPress={handleDelete}
+              disabled={saving || deleting}
+            >
+              {deleting ? (
+                <ActivityIndicator size="small" color="#ef4444" />
+              ) : (
+                <>
+                  <Icon name="trash-2" size={16} color="#ef4444" />
+                  <Text style={styles.deleteButtonText}>Delete Item</Text>
+                </>
+              )}
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -323,6 +421,7 @@ export default function AddIngredientsScreen() {
 // ─────────────────────────────────────────────────────────────────────────────
 // STYLES
 // ─────────────────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -346,7 +445,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#f8fafc",
   },
-  /** Fixed 40×40 touch target for icon buttons */
   iconButton: {
     width: 40,
     height: 40,
@@ -378,17 +476,13 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     marginTop: 16,
   },
-  /** Red asterisk shown next to required field labels */
   required: {
     color: "#ef4444",
   },
-  /** "(optional)" label shown next to optional field labels */
   optional: {
     color: "#475569",
     fontWeight: "400",
   },
-
-  /** Input field with a leading icon */
   inputRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -401,17 +495,12 @@ const styles = StyleSheet.create({
   inputIcon: {
     marginRight: 8,
   },
-  /**
-   * flex: 1 makes the TextInput fill the remaining width after the icon.
-   */
   input: {
     flex: 1,
     paddingVertical: 12,
     fontSize: 15,
     color: "#f8fafc",
   },
-
-  /** Standalone input field without a leading icon (used for quantity) */
   inputStandalone: {
     backgroundColor: "#0f1419",
     borderWidth: 1,
@@ -422,26 +511,20 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#f8fafc",
   },
-
-  /** Side-by-side row for Quantity and Unit */
   row: {
     flexDirection: "row",
     gap: 12,
     alignItems: "flex-start",
   },
-  /** Quantity takes less width since it's just a number */
   quantityField: {
     width: 90,
   },
-  /** Unit takes the remaining width */
   unitField: {
     flex: 1,
   },
   chipScroll: {
     marginTop: 2,
   },
-
-  /** Unselected unit chip */
   chip: {
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -451,7 +534,6 @@ const styles = StyleSheet.create({
     marginRight: 6,
     backgroundColor: "#0f1419",
   },
-  /** Selected unit chip — green tint */
   chipSelected: {
     borderColor: "#10b981",
     backgroundColor: "rgba(16, 185, 129, 0.1)",
@@ -464,15 +546,12 @@ const styles = StyleSheet.create({
     color: "#10b981",
     fontWeight: "600",
   },
-
-  /** Category chips wrap across multiple lines */
   categoryGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
     marginTop: 4,
   },
-  /** Unselected category chip */
   categoryChip: {
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -481,7 +560,6 @@ const styles = StyleSheet.create({
     borderColor: "#334155",
     backgroundColor: "#0f1419",
   },
-  /** Selected category chip */
   categoryChipSelected: {
     borderColor: "#10b981",
     backgroundColor: "rgba(16, 185, 129, 0.1)",
@@ -495,8 +573,7 @@ const styles = StyleSheet.create({
     color: "#10b981",
     fontWeight: "600",
   },
-
-  primaryButton: {
+  saveButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -506,29 +583,72 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginTop: 24,
   },
-  primaryButtonDisabled: {
-    opacity: 0.6,
-  },
-  primaryButtonText: {
+  saveButtonText: {
     fontSize: 16,
     fontWeight: "600",
     color: "#ffffff",
   },
 
-  // ── Tip card ──────────────────────────────────────────────────────────────
+  // ── Danger card (delete) ──────────────────────────────────────────────────
 
-  tipCard: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 10,
-    backgroundColor: "rgba(51, 65, 85, 0.3)",
-    borderRadius: 12,
-    padding: 14,
+  dangerCard: {
+    backgroundColor: "#1a1f2e",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.2)",
+    padding: 20,
   },
-  tipText: {
-    flex: 1,
+  dangerLabel: {
     fontSize: 13,
-    color: "#64748b",
-    lineHeight: 18,
+    fontWeight: "500",
+    color: "#ef4444",
+    marginBottom: 12,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  deleteButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.4)",
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: "rgba(239, 68, 68, 0.05)",
+  },
+  deleteButtonText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#ef4444",
+  },
+  buttonDisabled: {
+    opacity: 0.5,
+  },
+
+  // ── Not-found fallback ────────────────────────────────────────────────────
+
+  notFound: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 16,
+  },
+  notFoundText: {
+    fontSize: 16,
+    color: "#94a3b8",
+  },
+  backButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    backgroundColor: "#1a1f2e",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#334155",
+  },
+  backButtonText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#f8fafc",
   },
 })

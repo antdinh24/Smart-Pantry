@@ -1,15 +1,74 @@
 import { useState } from "react"
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView, TextInput } from "react-native"
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView, TextInput, ActivityIndicator, Alert } from "react-native"
 import Icon from "react-native-vector-icons/Feather"
 import { useNavigation } from "@react-navigation/native"
 import { usePantry } from "../hooks/usePantry"
-import { isUrgent } from "../utils/calculations"
+import { formatExpiry, formatQuantity } from "../utils/calculations"
 
 export default function PantryScreen() {
   const navigation = useNavigation()
   const [searchQuery, setSearchQuery] = useState("")
-  const { items, stats, getFilteredItems } = usePantry()
-  
+  const { stats, loading, error, getFilteredItems, deleteItem } = usePantry()
+
+  /**
+   * handleItemLongPress
+   *
+   * Called when the user holds down on a pantry item card.
+   * Shows an action sheet with Edit and Delete options.
+   *
+   * WHY long-press instead of swipe-to-delete?
+   *   Swipe-to-delete requires react-native-gesture-handler's Swipeable component
+   *   and extra gesture config. Long-press + Alert achieves the same outcome with
+   *   no additional dependencies — simpler to maintain.
+   *
+   * @param itemId   - UUID of the item that was long-pressed
+   * @param itemName - Display name shown in the confirmation dialogs
+   */
+  const handleItemLongPress = (itemId: string, itemName: string) => {
+    Alert.alert(itemName, "What would you like to do?", [
+      {
+        text: "Edit",
+        onPress: () => navigation.navigate("EditPantryItem" as never, { itemId } as never),
+      },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => confirmDelete(itemId, itemName),
+      },
+      { text: "Cancel", style: "cancel" },
+    ])
+  }
+
+  /**
+   * confirmDelete
+   *
+   * Shows a second Alert to confirm deletion before making the API call.
+   * A two-step confirmation prevents accidental deletions from a misfire.
+   *
+   * @param itemId   - UUID of the item to delete
+   * @param itemName - Name shown in the confirmation message
+   */
+  const confirmDelete = (itemId: string, itemName: string) => {
+    Alert.alert(
+      "Delete Item",
+      `Remove "${itemName}" from your pantry? This cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteItem(itemId)
+            } catch {
+              Alert.alert("Error", "Failed to delete item. Please try again.")
+            }
+          },
+        },
+      ]
+    )
+  }
+
   const filteredItems = getFilteredItems(undefined, searchQuery)
 
   return (
@@ -64,38 +123,64 @@ export default function PantryScreen() {
 
         {/* Items List */}
         <View style={styles.itemsList}>
-          {filteredItems.length === 0 ? (
+          {/* Loading state — shown while the initial API fetch is in progress */}
+          {loading ? (
+            <View style={styles.emptyState}>
+              <ActivityIndicator size="large" color="#10b981" />
+              <Text style={styles.emptyText}>Loading pantry...</Text>
+            </View>
+          ) : error ? (
+            /* Error state — shown if the API call failed */
+            <View style={styles.emptyState}>
+              <Icon name="alert-circle" size={48} color="#ef4444" />
+              <Text style={styles.emptyText}>{error}</Text>
+            </View>
+          ) : filteredItems.length === 0 ? (
+            /* Empty state — no items or no search results */
             <View style={styles.emptyState}>
               <Icon name="package" size={48} color="#94a3b8" />
               <Text style={styles.emptyText}>No items found</Text>
             </View>
           ) : (
-            filteredItems.map((item) => {
-              const urgent = isUrgent(item);
-              return (
-                <View key={item.id} style={[styles.itemCard, urgent && styles.itemCardUrgent]}>
-                  <View style={styles.itemContent}>
-                    <View style={[styles.itemIcon, urgent && styles.itemIconUrgent]}>
-                      <Icon name="package" size={24} color={urgent ? "#ef4444" : "#10b981"} />
+            filteredItems.map((item) => (
+              /*
+               * TouchableOpacity instead of View so the card responds to long-press.
+               * activeOpacity=1 keeps the card from dimming on a regular tap (there's
+               * no tap action — only long-press triggers the action menu).
+               */
+              <TouchableOpacity
+                key={item.id}
+                style={[styles.itemCard, item.urgent && styles.itemCardUrgent]}
+                onLongPress={() => handleItemLongPress(item.id, item.ingredient_name)}
+                delayLongPress={400}
+                activeOpacity={0.85}
+              >
+                <View style={styles.itemContent}>
+                  <View style={[styles.itemIcon, item.urgent && styles.itemIconUrgent]}>
+                    <Icon name="package" size={24} color={item.urgent ? "#ef4444" : "#10b981"} />
+                  </View>
+                  <View style={styles.itemInfo}>
+                    <View style={styles.itemHeader}>
+                      {/* ingredient_name replaces the old "name" field */}
+                      <Text style={styles.itemName}>{item.ingredient_name}</Text>
+                      {item.urgent && <Icon name="alert-circle" size={16} color="#ef4444" />}
                     </View>
-                    <View style={styles.itemInfo}>
-                      <View style={styles.itemHeader}>
-                        <Text style={styles.itemName}>{item.name}</Text>
-                        {urgent && <Icon name="alert-circle" size={16} color="#ef4444" />}
-                      </View>
-                      <View style={styles.itemMeta}>
-                        <Text style={styles.itemMetaText}>{item.category}</Text>
-                        <Text style={styles.itemMetaText}>•</Text>
-                        <Text style={styles.itemMetaText}>{item.quantity}</Text>
-                      </View>
-                    </View>
-                    <View style={styles.itemExpiry}>
-                      <Text style={[styles.expiryText, urgent && styles.expiryTextUrgent]}>{item.expiry}</Text>
+                    <View style={styles.itemMeta}>
+                      <Text style={styles.itemMetaText}>{item.category ?? 'Uncategorized'}</Text>
+                      <Text style={styles.itemMetaText}>•</Text>
+                      {/* formatQuantity combines the numeric quantity + unit into "1.5 gallon" */}
+                      <Text style={styles.itemMetaText}>{formatQuantity(item.quantity, item.unit)}</Text>
                     </View>
                   </View>
+                  <View style={styles.itemExpiry}>
+                    {/* formatExpiry converts ISO date to "2 days", "Today", "No expiry", etc. */}
+                    <Text style={[styles.expiryText, item.urgent && styles.expiryTextUrgent]}>
+                      {formatExpiry(item.expiration_date)}
+                    </Text>
+                  </View>
                 </View>
-              );
-            })
+              </TouchableOpacity>
+            ))
           )}
         </View>
       </ScrollView>
