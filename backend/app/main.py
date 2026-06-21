@@ -60,9 +60,19 @@ async def health_check():
     }
 
 
-# TODO: Register routers here as we build them
-# Example:
-# from app.routers import recipes, pantry, auth
-# app.include_router(recipes.router, prefix="/api/v1/recipes", tags=["recipes"])
-# app.include_router(pantry.router, prefix="/api/v1/pantry", tags=["pantry"])
-# app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
+# Import models so SQLAlchemy's Base.metadata knows about all tables.
+# This is required for create_all() to include the user_usage table.
+# NOTE: The user_usage table must also be created via a database migration
+# before deploying — SQLAlchemy won't auto-create it in production unless
+# you call Base.metadata.create_all(engine) explicitly.
+from app.models import user_usage  # noqa: F401 — import for side effect only
+
+# Register API routers
+from app.routers import auth, pantry, recipes, receipts, ingredients, analytics
+
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
+app.include_router(pantry.router, prefix="/api/v1/pantry", tags=["pantry"])
+app.include_router(recipes.router, prefix="/api/v1/recipes", tags=["recipes"])
+app.include_router(receipts.router, prefix="/api/v1/receipts", tags=["receipts"])
+app.include_router(ingredients.router, prefix="/api/v1/ingredients", tags=["ingredients"])
+app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["analytics"])

@@ -1,207 +1,227 @@
 /**
- * Storage Service (MMKV Wrapper)
+ * Storage Service (Expo SecureStore Wrapper)
  *
  * Product Manager Note:
- * - Fast key-value storage for settings and tokens
- * - Encrypted by default (secure)
- * - Synchronous (no async/await needed)
+ * - Secure encrypted storage for settings and tokens
+ * - Async API (requires await)
  * - Used for: auth tokens, preferences, feature flags
  *
  * NOT used for: pantry items, recipes (use SQLite for that)
  */
 
-import { MMKV } from 'react-native-mmkv'
-
-// Initialize MMKV instance
-const storage = new MMKV()
+import * as SecureStore from 'expo-secure-store'
 
 /**
  * Storage Service
- * Provides type-safe access to MMKV storage
+ * Provides type-safe access to SecureStore
+ * All methods are async and must be awaited
  */
 export const StorageService = {
   // ============================================================
   // AUTH TOKENS
   // ============================================================
-  setAuthToken: (token: string) => {
-    storage.set('auth.token', token)
+  setAuthToken: async (token: string): Promise<void> => {
+    await SecureStore.setItemAsync('auth.token', token)
   },
 
-  getAuthToken: (): string | undefined => {
-    return storage.getString('auth.token')
+  getAuthToken: async (): Promise<string | null> => {
+    return await SecureStore.getItemAsync('auth.token')
   },
 
-  setRefreshToken: (token: string) => {
-    storage.set('auth.refresh_token', token)
+  setRefreshToken: async (token: string): Promise<void> => {
+    await SecureStore.setItemAsync('auth.refresh_token', token)
   },
 
-  getRefreshToken: (): string | undefined => {
-    return storage.getString('auth.refresh_token')
+  getRefreshToken: async (): Promise<string | null> => {
+    return await SecureStore.getItemAsync('auth.refresh_token')
   },
 
-  setUserId: (userId: string) => {
-    storage.set('auth.user_id', userId)
+  setUserId: async (userId: string): Promise<void> => {
+    await SecureStore.setItemAsync('auth.user_id', userId)
   },
 
-  getUserId: (): string | undefined => {
-    return storage.getString('auth.user_id')
+  getUserId: async (): Promise<string | null> => {
+    return await SecureStore.getItemAsync('auth.user_id')
   },
 
-  setUserEmail: (email: string) => {
-    storage.set('auth.email', email)
+  setUserEmail: async (email: string): Promise<void> => {
+    await SecureStore.setItemAsync('auth.email', email)
   },
 
-  getUserEmail: (): string | undefined => {
-    return storage.getString('auth.email')
+  getUserEmail: async (): Promise<string | null> => {
+    return await SecureStore.getItemAsync('auth.email')
   },
 
-  clearAuth: () => {
-    storage.delete('auth.token')
-    storage.delete('auth.refresh_token')
-    storage.delete('auth.user_id')
-    storage.delete('auth.email')
+  clearAuth: async (): Promise<void> => {
+    await SecureStore.deleteItemAsync('auth.token')
+    await SecureStore.deleteItemAsync('auth.refresh_token')
+    await SecureStore.deleteItemAsync('auth.user_id')
+    await SecureStore.deleteItemAsync('auth.email')
   },
 
   // ============================================================
   // USER PREFERENCES
   // ============================================================
-  setTheme: (theme: 'light' | 'dark') => {
-    storage.set('prefs.theme', theme)
+  setTheme: async (theme: 'light' | 'dark'): Promise<void> => {
+    await SecureStore.setItemAsync('prefs.theme', theme)
   },
 
-  getTheme: (): 'light' | 'dark' => {
-    return (storage.getString('prefs.theme') as 'light' | 'dark') || 'dark'
+  getTheme: async (): Promise<'light' | 'dark'> => {
+    const theme = await SecureStore.getItemAsync('prefs.theme')
+    return (theme as 'light' | 'dark') || 'dark'
   },
 
-  setMeasurementSystem: (system: 'metric' | 'imperial') => {
-    storage.set('prefs.measurement_system', system)
+  setMeasurementSystem: async (system: 'metric' | 'imperial'): Promise<void> => {
+    await SecureStore.setItemAsync('prefs.measurement_system', system)
   },
 
-  getMeasurementSystem: (): 'metric' | 'imperial' => {
-    return (storage.getString('prefs.measurement_system') as 'metric' | 'imperial') || 'metric'
+  getMeasurementSystem: async (): Promise<'metric' | 'imperial'> => {
+    const system = await SecureStore.getItemAsync('prefs.measurement_system')
+    return (system as 'metric' | 'imperial') || 'metric'
   },
 
-  setDefaultServings: (servings: number) => {
-    storage.set('prefs.default_servings', servings)
+  setDefaultServings: async (servings: number): Promise<void> => {
+    await SecureStore.setItemAsync('prefs.default_servings', servings.toString())
   },
 
-  getDefaultServings: (): number => {
-    return storage.getNumber('prefs.default_servings') || 4
+  getDefaultServings: async (): Promise<number> => {
+    const servings = await SecureStore.getItemAsync('prefs.default_servings')
+    return servings ? parseInt(servings, 10) : 4
   },
 
-  setNotificationsEnabled: (enabled: boolean) => {
-    storage.set('prefs.notifications_enabled', enabled)
+  setNotificationsEnabled: async (enabled: boolean): Promise<void> => {
+    await SecureStore.setItemAsync('prefs.notifications_enabled', enabled.toString())
   },
 
-  getNotificationsEnabled: (): boolean => {
-    return storage.getBoolean('prefs.notifications_enabled') ?? true
+  getNotificationsEnabled: async (): Promise<boolean> => {
+    const enabled = await SecureStore.getItemAsync('prefs.notifications_enabled')
+    return enabled !== null ? enabled === 'true' : true
   },
 
   // ============================================================
   // FEATURE FLAGS
   // ============================================================
-  setPremiumUnlocked: (unlocked: boolean) => {
-    storage.set('feature.premium_unlocked', unlocked)
+  setPremiumUnlocked: async (unlocked: boolean): Promise<void> => {
+    await SecureStore.setItemAsync('feature.premium_unlocked', unlocked.toString())
   },
 
-  isPremiumUnlocked: (): boolean => {
-    return storage.getBoolean('feature.premium_unlocked') ?? false
+  isPremiumUnlocked: async (): Promise<boolean> => {
+    const unlocked = await SecureStore.getItemAsync('feature.premium_unlocked')
+    return unlocked === 'true'
   },
 
-  setTrialEndDate: (timestamp: number) => {
-    storage.set('feature.trial_end_date', timestamp)
+  setTrialEndDate: async (timestamp: number): Promise<void> => {
+    await SecureStore.setItemAsync('feature.trial_end_date', timestamp.toString())
   },
 
-  getTrialEndDate: (): number | undefined => {
-    return storage.getNumber('feature.trial_end_date')
+  getTrialEndDate: async (): Promise<number | null> => {
+    const timestamp = await SecureStore.getItemAsync('feature.trial_end_date')
+    return timestamp ? parseInt(timestamp, 10) : null
   },
 
-  setAIRecipesRemaining: (count: number) => {
-    storage.set('feature.ai_recipes_remaining', count)
+  setAIRecipesRemaining: async (count: number): Promise<void> => {
+    await SecureStore.setItemAsync('feature.ai_recipes_remaining', count.toString())
   },
 
-  getAIRecipesRemaining: (): number => {
-    return storage.getNumber('feature.ai_recipes_remaining') ?? 5
+  getAIRecipesRemaining: async (): Promise<number> => {
+    const count = await SecureStore.getItemAsync('feature.ai_recipes_remaining')
+    return count ? parseInt(count, 10) : 5
   },
 
-  setOnboardingCompleted: (completed: boolean) => {
-    storage.set('feature.onboarding_completed', completed)
+  setOnboardingCompleted: async (completed: boolean): Promise<void> => {
+    await SecureStore.setItemAsync('feature.onboarding_completed', completed.toString())
   },
 
-  isOnboardingCompleted: (): boolean => {
-    return storage.getBoolean('feature.onboarding_completed') ?? false
+  isOnboardingCompleted: async (): Promise<boolean> => {
+    const completed = await SecureStore.getItemAsync('feature.onboarding_completed')
+    return completed === 'true'
   },
 
   // ============================================================
   // APP STATE
   // ============================================================
-  setLastSyncTime: (timestamp: number) => {
-    storage.set('app.last_sync', timestamp)
+  setLastSyncTime: async (timestamp: number): Promise<void> => {
+    await SecureStore.setItemAsync('app.last_sync', timestamp.toString())
   },
 
-  getLastSyncTime: (): number | undefined => {
-    return storage.getNumber('app.last_sync')
+  getLastSyncTime: async (): Promise<number | null> => {
+    const timestamp = await SecureStore.getItemAsync('app.last_sync')
+    return timestamp ? parseInt(timestamp, 10) : null
   },
 
-  setDbSchemaVersion: (version: number) => {
-    storage.set('app.db_schema_version', version)
+  setDbSchemaVersion: async (version: number): Promise<void> => {
+    await SecureStore.setItemAsync('app.db_schema_version', version.toString())
   },
 
-  getDbSchemaVersion: (): number => {
-    return storage.getNumber('app.db_schema_version') || 1
+  getDbSchemaVersion: async (): Promise<number> => {
+    const version = await SecureStore.getItemAsync('app.db_schema_version')
+    return version ? parseInt(version, 10) : 1
   },
 
-  incrementLaunchCount: () => {
-    const current = storage.getNumber('app.launch_count') || 0
-    storage.set('app.launch_count', current + 1)
-    return current + 1
+  incrementLaunchCount: async (): Promise<number> => {
+    const current = await SecureStore.getItemAsync('app.launch_count')
+    const count = current ? parseInt(current, 10) : 0
+    const newCount = count + 1
+    await SecureStore.setItemAsync('app.launch_count', newCount.toString())
+    return newCount
   },
 
-  getLaunchCount: (): number => {
-    return storage.getNumber('app.launch_count') || 0
+  getLaunchCount: async (): Promise<number> => {
+    const count = await SecureStore.getItemAsync('app.launch_count')
+    return count ? parseInt(count, 10) : 0
   },
 
   // ============================================================
   // BUDGETING
   // ============================================================
-  setMonthlyBudget: (amount: number) => {
-    storage.set('budget.monthly_limit', amount)
+  setMonthlyBudget: async (amount: number): Promise<void> => {
+    await SecureStore.setItemAsync('budget.monthly_limit', amount.toString())
   },
 
-  getMonthlyBudget: (): number | undefined => {
-    return storage.getNumber('budget.monthly_limit')
+  getMonthlyBudget: async (): Promise<number | null> => {
+    const amount = await SecureStore.getItemAsync('budget.monthly_limit')
+    return amount ? parseFloat(amount) : null
   },
 
-  setCurrency: (currency: string) => {
-    storage.set('budget.currency', currency)
+  setCurrency: async (currency: string): Promise<void> => {
+    await SecureStore.setItemAsync('budget.currency', currency)
   },
 
-  getCurrency: (): string => {
-    return storage.getString('budget.currency') || 'USD'
+  getCurrency: async (): Promise<string> => {
+    const currency = await SecureStore.getItemAsync('budget.currency')
+    return currency || 'USD'
   },
 
   // ============================================================
   // UTILITIES
   // ============================================================
-  clearAll: () => {
-    storage.clearAll()
-  },
+  clearAll: async (): Promise<void> => {
+    // Note: SecureStore doesn't have a clearAll method
+    // You'll need to manually delete all known keys
+    const keys = [
+      'auth.token', 'auth.refresh_token', 'auth.user_id', 'auth.email',
+      'prefs.theme', 'prefs.measurement_system', 'prefs.default_servings', 'prefs.notifications_enabled',
+      'feature.premium_unlocked', 'feature.trial_end_date', 'feature.ai_recipes_remaining', 'feature.onboarding_completed',
+      'app.last_sync', 'app.db_schema_version', 'app.launch_count',
+      'budget.monthly_limit', 'budget.currency'
+    ]
 
-  getAllKeys: (): string[] => {
-    return storage.getAllKeys()
+    for (const key of keys) {
+      await SecureStore.deleteItemAsync(key)
+    }
   },
 
   // Generic get/set for custom keys
-  set: (key: string, value: string | number | boolean) => {
-    storage.set(key, value)
+  set: async (key: string, value: string | number | boolean): Promise<void> => {
+    await SecureStore.setItemAsync(key, value.toString())
   },
 
-  get: (key: string): string | number | boolean | undefined => {
-    return storage.getString(key) || storage.getNumber(key) || storage.getBoolean(key)
+  get: async (key: string): Promise<string | null> => {
+    return await SecureStore.getItemAsync(key)
   },
 
-  delete: (key: string) => {
-    storage.delete(key)
+  delete: async (key: string): Promise<void> => {
+    await SecureStore.deleteItemAsync(key)
   },
 }
 

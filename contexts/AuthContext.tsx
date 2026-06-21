@@ -17,6 +17,8 @@ interface User {
   id: string
   email: string
   subscriptionStatus: 'free' | 'premium' | 'trial'
+  /** True for anonymous (guest) Supabase sessions — no email, no profile row */
+  isGuest: boolean
 }
 
 interface AuthContextType {
@@ -25,7 +27,18 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<void>
   signUp: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
+  /**
+   * signInAsGuest
+   *
+   * Creates an anonymous Supabase session. The guest gets a real UUID and JWT
+   * so backend calls work, but AI features (recipe generation, receipt scanning)
+   * are blocked in the UI to prevent cost abuse. Data persists between sessions
+   * via SecureStore until the user uninstalls the app or signs out.
+   */
+  signInAsGuest: () => Promise<void>
   isPremium: boolean
+  /** True when the current session is an anonymous (guest) account */
+  isGuest: boolean
   refreshSubscriptionStatus: () => Promise<void>
 }
 
@@ -52,19 +65,35 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const session = await SupabaseService.getSession()
 
       if (session?.user) {
-        // Get user profile with subscription status
+        /**
+         * Anonymous (guest) users have no row in the `users` profile table,
+         * so we skip the getUserProfile call entirely and set a minimal user
+         * object. The `is_anonymous` flag comes from Supabase's User type.
+         */
+        if (session.user.is_anonymous) {
+          setUser({
+            id: session.user.id,
+            email: '',
+            subscriptionStatus: 'free',
+            isGuest: true,
+          })
+          return
+        }
+
+        // Regular user — fetch profile for subscription status
         const profile = await SupabaseService.getUserProfile(session.user.id)
 
         setUser({
           id: session.user.id,
           email: session.user.email || '',
           subscriptionStatus: profile?.subscription_status || 'free',
+          isGuest: false,
         })
 
-        // Save to MMKV
-        StorageService.setUserId(session.user.id)
-        StorageService.setUserEmail(session.user.email || '')
-        StorageService.setPremiumUnlocked(profile?.subscription_status === 'premium')
+        // Save to SecureStore
+        await StorageService.setUserId(session.user.id)
+        await StorageService.setUserEmail(session.user.email || '')
+        await StorageService.setPremiumUnlocked(profile?.subscription_status === 'premium')
       } else {
         setUser(null)
       }
@@ -93,10 +122,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         id: authUser.id,
         email: authUser.email || '',
         subscriptionStatus: profile?.subscription_status || 'free',
+        isGuest: false,
       })
 
-      // Save to MMKV
-      StorageService.setPremiumUnlocked(profile?.subscription_status === 'premium')
+      // Save to SecureStore
+      await StorageService.setPremiumUnlocked(profile?.subscription_status === 'premium')
 
       console.log('✅ Signed in successfully')
     } catch (error: any) {
@@ -124,12 +154,45 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         id: authUser.id,
         email: authUser.email || '',
         subscriptionStatus: 'free',
+        isGuest: false,
       })
 
       console.log('✅ Signed up successfully')
     } catch (error: any) {
       console.error('Sign up error:', error)
       throw new Error(error.message || 'Failed to sign up')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  /**
+   * signInAsGuest
+   *
+   * Creates an anonymous Supabase session. Guest users get a real UUID + JWT
+   * so pantry management and barcode lookup work immediately. Recipe generation
+   * and receipt scanning are blocked at the screen level to prevent API cost abuse.
+   *
+   * The session is persisted in SecureStore so data survives app close/reopen.
+   * Data is lost on uninstall or explicit sign-out without upgrading to a full account.
+   */
+  const signInAsGuest = async () => {
+    try {
+      setLoading(true)
+      const { user: anonUser } = await SupabaseService.signInAnonymously()
+      if (!anonUser) throw new Error('Guest sign in failed')
+
+      setUser({
+        id: anonUser.id,
+        email: '',
+        subscriptionStatus: 'free',
+        isGuest: true,
+      })
+
+      console.log('✅ Signed in as guest')
+    } catch (error: any) {
+      console.error('Guest sign in error:', error)
+      throw new Error(error.message || 'Failed to sign in as guest')
     } finally {
       setLoading(false)
     }
@@ -144,7 +207,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setUser(null)
 
       // Clear local data
-      StorageService.clearAuth()
+      await StorageService.clearAuth()
 
       console.log('✅ Signed out successfully')
     } catch (error: any) {
@@ -168,13 +231,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         prev ? { ...prev, subscriptionStatus: status.subscription_status } : null
       )
 
-      StorageService.setPremiumUnlocked(isPremium)
+      await StorageService.setPremiumUnlocked(isPremium)
     } catch (error) {
       console.error('Failed to refresh subscription:', error)
     }
   }
 
   const isPremium = user?.subscriptionStatus === 'premium' || user?.subscriptionStatus === 'trial'
+  const isGuest = user?.isGuest ?? false
 
   const value: AuthContextType = {
     user,
@@ -182,7 +246,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     signIn,
     signUp,
     signOut,
+    signInAsGuest,
     isPremium,
+    isGuest,
     refreshSubscriptionStatus,
   }
 

@@ -11,6 +11,7 @@
 import axios, { AxiosInstance, AxiosError } from 'axios'
 import { env } from '../config/env'
 import StorageService from './storage'
+import { supabase } from './supabase'
 
 // Create axios instance
 const apiClient: AxiosInstance = axios.create({
@@ -23,8 +24,8 @@ const apiClient: AxiosInstance = axios.create({
 
 // Request interceptor - add auth token
 apiClient.interceptors.request.use(
-  (config) => {
-    const token = StorageService.getAuthToken()
+  async (config) => {
+    const token = await StorageService.getAuthToken()
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
@@ -35,15 +36,49 @@ apiClient.interceptors.request.use(
   }
 )
 
-// Response interceptor - handle errors
+// Response interceptor - handle token expiry
+//
+// When the backend returns 401, the access token has expired. We attempt a
+// silent refresh using Supabase's stored refresh token. If the refresh works,
+// we update SecureStore with the new access token and retry the original
+// request transparently — the user never knows anything happened.
+//
+// If the refresh fails (refresh token also expired, or the user was signed out
+// on another device), we sign the user out and they are returned to the login
+// screen on the next render cycle.
+//
+// WHY _retry flag: prevents an infinite retry loop. If the retried request
+// also comes back 401 (shouldn't happen, but defensive), we reject immediately.
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
-    if (error.response?.status === 401) {
-      // Token expired - handle refresh or logout
-      console.log('🔒 Unauthorized - token may be expired')
-      // TODO: Implement token refresh logic
+    const originalRequest = error.config as any
+
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true
+
+      try {
+        const { data, error: refreshError } = await supabase.auth.refreshSession()
+
+        if (refreshError || !data.session) {
+          // Refresh failed — clear local state and let the app navigate to login
+          await supabase.auth.signOut()
+          await StorageService.clearAuth()
+          return Promise.reject(error)
+        }
+
+        // Refresh succeeded — persist the new access token and retry
+        await StorageService.setAuthToken(data.session.access_token)
+        originalRequest.headers.Authorization = `Bearer ${data.session.access_token}`
+        return apiClient(originalRequest)
+
+      } catch {
+        // Unexpected error during refresh — sign out to be safe
+        await supabase.auth.signOut()
+        await StorageService.clearAuth()
+      }
     }
+
     return Promise.reject(error)
   }
 )
@@ -110,10 +145,20 @@ export const APIService = {
   // ============================================================
 
   /**
-   * Generate AI recipe from pantry
+   * generateRecipe
+   *
+   * Asks the backend to generate (or return a cached) recipe based on a list
+   * of ingredient names. The backend requires at least one ingredient.
+   *
+   * The response includes the full recipe AND cache metadata (from_cache,
+   * api_call_saved) so the caller knows whether an OpenAI call was made.
+   *
+   * @param ingredients - Array of ingredient name strings from the user's pantry
+   * @param preferences - Optional hints like { cuisine: "Italian", difficulty: "easy" }
    */
-  generateRecipe: async (preferences?: any) => {
+  generateRecipe: async (ingredients: string[], preferences?: Record<string, any>) => {
     const { data } = await apiClient.post('/recipes/generate', {
+      ingredients,
       preferences,
     })
     return data
@@ -154,6 +199,50 @@ export const APIService = {
   // ============================================================
   // RECEIPT ENDPOINTS
   // ============================================================
+
+  /**
+   * scanReceipt
+   *
+   * Sends a base64-encoded receipt image to the backend, which uses GPT-4o
+   * vision to extract the text and parse it into structured line items.
+   *
+   * The response has the same shape as processReceipt — both return a
+   * receipt_id, merchant_name, line_items, total_amount, and confidence score.
+   * ReceiptConfirmScreen uses this data to show the confirmation checklist.
+   *
+   * Usage limit: 8 scans/month on the free tier. The backend returns HTTP 429
+   * with a user-friendly message when the limit is hit. The caller should
+   * catch this and show the upgrade prompt instead of an error alert.
+   *
+   * @param imageBase64 - Base64 string of the receipt photo (no data URL prefix)
+   */
+  scanReceipt: async (imageBase64: string) => {
+    const { data } = await apiClient.post('/receipts/scan', {
+      image_base64: imageBase64,
+    })
+    return data
+  },
+
+  /**
+   * confirmReceipt
+   *
+   * Confirms a pending receipt and adds the selected items to the pantry.
+   * Called when the user taps "Add X Items to Pantry" on ReceiptConfirmScreen.
+   *
+   * The backend marks the receipt as processed and adds each line item
+   * to the user's pantry, then updates monthly analytics.
+   *
+   * @param receiptId - UUID of the pending receipt record (from scanReceipt response)
+   * @param lineItems - The user-confirmed (and potentially edited) list of items.
+   *                    Only selected items should be included in this array.
+   */
+  confirmReceipt: async (receiptId: string, lineItems: any[]) => {
+    const { data } = await apiClient.post('/receipts/confirm', {
+      receipt_id: receiptId,
+      line_items: lineItems,
+    })
+    return data
+  },
 
   /**
    * Process receipt OCR text

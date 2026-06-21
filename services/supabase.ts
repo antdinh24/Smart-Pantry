@@ -15,16 +15,16 @@ import StorageService from './storage'
 // Create Supabase client
 export const supabase = createClient(env.supabaseUrl, env.supabaseAnonKey, {
   auth: {
-    // Persist session using MMKV
+    // Persist session using SecureStore
     storage: {
-      getItem: (key: string) => {
-        return StorageService.get(key) as string | null
+      getItem: async (key: string) => {
+        return await StorageService.get(key)
       },
-      setItem: (key: string, value: string) => {
-        StorageService.set(key, value)
+      setItem: async (key: string, value: string) => {
+        await StorageService.set(key, value)
       },
-      removeItem: (key: string) => {
-        StorageService.delete(key)
+      removeItem: async (key: string) => {
+        await StorageService.delete(key)
       },
     },
     autoRefreshToken: true,
@@ -66,12 +66,35 @@ export const SupabaseService = {
 
     if (error) throw error
 
-    // Save user info to MMKV
+    // Save user info to SecureStore
     if (data.user) {
-      StorageService.setUserId(data.user.id)
-      StorageService.setUserEmail(data.user.email || '')
+      await StorageService.setUserId(data.user.id)
+      await StorageService.setUserEmail(data.user.email || '')
     }
 
+    return data
+  },
+
+  /**
+   * signInAnonymously
+   *
+   * Creates a temporary anonymous Supabase session. The anonymous user receives
+   * a real UUID and a valid JWT, so all backend API calls work normally —
+   * pantry items are stored in Supabase under that UUID just like a regular user.
+   *
+   * Data persists between app close/open as long as the refresh token remains
+   * valid (Supabase default: 7 days of inactivity). Data is permanently lost
+   * if the user uninstalls the app or explicitly signs out without upgrading.
+   *
+   * Requires "Anonymous sign-ins" to be enabled in the Supabase dashboard:
+   * Authentication → Providers → Anonymous sign-ins → toggle ON.
+   *
+   * The anonymous session can be upgraded to a full account later via:
+   *   supabase.auth.updateUser({ email, password })
+   */
+  signInAnonymously: async () => {
+    const { data, error } = await supabase.auth.signInAnonymously()
+    if (error) throw error
     return data
   },
 
@@ -83,7 +106,7 @@ export const SupabaseService = {
     if (error) throw error
 
     // Clear local auth data
-    StorageService.clearAuth()
+    await StorageService.clearAuth()
   },
 
   /**

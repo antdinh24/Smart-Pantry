@@ -73,7 +73,7 @@ class SyncService {
 
       if (queue.length === 0) {
         console.log('✅ Nothing to sync')
-        StorageService.setLastSyncTime(Date.now())
+        await StorageService.setLastSyncTime(Date.now())
         return
       }
 
@@ -101,7 +101,7 @@ class SyncService {
       }
 
       console.log(`✅ Sync complete: ${successCount} success, ${errorCount} errors`)
-      StorageService.setLastSyncTime(Date.now())
+      await StorageService.setLastSyncTime(Date.now())
     } catch (error) {
       console.error('❌ Sync failed:', error)
     } finally {

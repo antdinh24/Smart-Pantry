@@ -25,9 +25,10 @@ class Settings(BaseSettings):
     # OpenAI
     openai_api_key: str
 
-    # Stripe
-    stripe_secret_key: str
-    stripe_webhook_secret: str
+    # Stripe (post-MVP — not required at startup; Stripe endpoints will fail
+    # gracefully if called without real keys until subscription tier is built)
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
 
     # App Settings
     environment: str = "development"

@@ -34,8 +34,8 @@ const getEnvVar = (key: string, defaultValue?: string): string => {
 // Export validated configuration
 export const env: Env = {
   apiUrl: getEnvVar('EXPO_PUBLIC_API_URL', 'http://localhost:8000/api/v1'),
-  supabaseUrl: getEnvVar('EXPO_PUBLIC_SUPABASE_URL'),
-  supabaseAnonKey: getEnvVar('EXPO_PUBLIC_SUPABASE_ANON_KEY'),
+  supabaseUrl: getEnvVar('EXPO_PUBLIC_SUPABASE_URL', 'https://placeholder.supabase.co'),
+  supabaseAnonKey: getEnvVar('EXPO_PUBLIC_SUPABASE_ANON_KEY', 'placeholder-anon-key'),
   environment: (getEnvVar('EXPO_PUBLIC_ENVIRONMENT', 'development') as Env['environment']),
   enableAnalytics: getEnvVar('EXPO_PUBLIC_ENABLE_ANALYTICS', 'false') === 'true',
   enableAds: getEnvVar('EXPO_PUBLIC_ENABLE_ADS', 'false') === 'true',
