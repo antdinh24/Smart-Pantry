@@ -318,7 +318,12 @@ class IngredientSearchService:
         if existing:
             # Update existing entry
             existing.barcode = ingredient_data.get('barcode') or existing.barcode
-            existing.extra_data = ingredient_data.get('extra_data') or existing.extra_data
+            # Accept 'metadata' (external API dict key) or 'extra_data' (internal model key)
+            existing.extra_data = (
+                ingredient_data.get('metadata')
+                or ingredient_data.get('extra_data')
+                or existing.extra_data
+            )
         else:
             # Create new entry
             new_ingredient = IngredientCache(
@@ -327,7 +332,7 @@ class IngredientSearchService:
                 category=ingredient_data.get('category', 'pantry'),
                 barcode=ingredient_data.get('barcode'),
                 source=ingredient_data.get('source', 'openfoodfacts'),
-                extra_data=ingredient_data.get('extra_data'),
+                extra_data=ingredient_data.get('metadata') or ingredient_data.get('extra_data'),
                 popularity=0
             )
             db.add(new_ingredient)

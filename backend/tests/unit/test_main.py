@@ -52,7 +52,8 @@ class TestHealthEndpoints:
 
     def test_cors_headers(self, test_client):
         """Test CORS headers are present"""
-        response = test_client.options("/")
+        # CORSMiddleware only adds headers when an Origin header is present
+        response = test_client.options("/", headers={"Origin": "http://localhost"})
 
         # CORS headers should be present
         assert "access-control-allow-origin" in response.headers

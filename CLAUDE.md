@@ -47,6 +47,41 @@ Structure explanations like:
 
 ---
 
+## SPRINTS.md — Sprint Planning & Retro Log
+
+**`SPRINTS.md` is the single source of truth for sprint plans, task status, and retro notes.**
+
+It lives at the repo root alongside `spec.md`. Sprint content must never live inside `spec.md`.
+
+### Structure of each sprint entry
+
+Every sprint gets a dated section with these four parts:
+
+```markdown
+## Sprint N — Name (status: active | complete)
+
+**Dates:** YYYY-MM-DD → YYYY-MM-DD
+**Branch:** `branch-name`
+**Goal:** One sentence on what this sprint delivers.
+
+### Tasks
+- [x] Completed task
+- [ ] Incomplete task
+
+### Retro Notes
+- Anything a new agent starting fresh would need to know to pick up this sprint without re-discovering problems.
+- Include: bugs hit and how they were fixed, non-obvious constraints, decisions made mid-sprint, anything that broke unexpectedly and why.
+```
+
+### Rules
+
+- Mark tasks `[x]` as they are completed — do not wait until the sprint ends.
+- When starting a new sprint, close out the previous one with a final retro note and set status to `complete`.
+- Retro Notes are for **non-obvious things only** — bugs, workarounds, gotchas, mid-sprint pivots. Do not repeat things already in `spec.md`.
+- Architectural decisions made during a sprint go in `spec.md` (and the Version History). Operational notes and task status go in `SPRINTS.md`.
+
+---
+
 ## spec.md — Living Document Rule
 
 **`spec.md` must be kept up to date after every session.**
@@ -67,15 +102,28 @@ After any conversation where a design decision, architectural choice, scope chan
 - Test coverage additions
 - Code style or comment changes
 
-### Historical record — do NOT delete old decisions:
-When a plan changes, **do not remove the old content**. Instead:
-- Cross out the old text using `~~strikethrough~~`
-- Add a note explaining what replaced it and why
+### Version numbering and history:
+`spec.md` carries a current version label (e.g. `**Current Version: v0.3**`) near the top.
 
-Example:
-> ~~OCR: ML Kit (on-device)~~ — replaced by GPT-4o vision (see §14); ML Kit requires Expo prebuild which was too complex for MVP.
+**When a design decision changes:**
+1. Update the inline content in `spec.md` to reflect the new plan — keep the active spec clean and accurate.
+2. Bump the version number at the top.
+3. Add an entry to the `## Version History` section at the **bottom** of `spec.md` describing what was removed or changed from the previous version.
 
-This preserves the reasoning history so we can revert or understand past decisions without digging through git history.
+Each Version History entry must include:
+- **Version number and date** — e.g. `### v0.3 — 2026-06-20`
+- **Section changed** — cite the section heading (e.g. `§6 OCR Strategy`)
+- **What changed** — the specific content that was replaced or removed
+- **Why** — the reason for the change
+
+Example entry:
+```
+### v0.3 — 2026-06-20
+- **§6 OCR Strategy**: Switched from ML Kit (on-device) to GPT-4o vision.
+  Reason: ML Kit requires Expo prebuild which added too much complexity for MVP.
+```
+
+Do NOT use `~~strikethrough~~` inline — it clutters the active spec. All history belongs in Version History only.
 
 ### When to update:
 - Immediately after agreeing on an approach with the user — before implementing
@@ -129,4 +177,3 @@ Tests must cover all of these categories where applicable:
 - Auth middleware returns **403** (not 401) for missing tokens — tests should allow both
 - Custom markers in `pytest.ini` must be registered before use (`--strict-markers` is on)
 - The `autouse` fixture `mock_supabase_token_validation` in `conftest.py` mocks Supabase auth for all tests
-- Agent debug logging exists in `services/api.ts` — do not remove without asking

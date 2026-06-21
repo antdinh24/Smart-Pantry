@@ -145,7 +145,7 @@ class TestIngredientSearchServiceSearchCache:
         mock_result.to_dict.return_value = {"ingredient_name": "Almond Milk", "normalized_name": "almond milk"}
 
         mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.order_value.return_value.limit.return_value.all.return_value = [mock_result]
+        mock_db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [mock_result]
 
         # Searching for "milk" should find "Almond Milk"
         result = IngredientSearchService.search_cache("milk", mock_db, limit=10)
@@ -310,9 +310,9 @@ class TestIngredientSearchServiceCacheIngredient:
 
         IngredientSearchService.cache_ingredient(ingredient_data, mock_db)
 
-        # Should update barcode and metadata
+        # Should update barcode and extra_data (the model's column name for metadata)
         assert existing_ingredient.barcode == "0123456789"
-        assert existing_ingredient.metadata == {"brand": "Organic Valley"}
+        assert existing_ingredient.extra_data == {"brand": "Organic Valley"}
         mock_db.commit.assert_called_once()
 
     def test_cache_ingredient_defaults_to_pantry_category(self):

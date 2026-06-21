@@ -61,7 +61,7 @@ class TestAnalyticsServiceUpdateMonthlyAnalytics:
         AnalyticsService.update_monthly_analytics(mock_db, "user-uuid", receipt_data)
 
         # Should update total
-        assert existing_analytics.total_spending == 145.67  # 100 + 45.67
+        assert existing_analytics.total_spending == pytest.approx(145.67)  # 100 + 45.67
         mock_db.commit.assert_called_once()
 
     def test_update_extracts_correct_month_from_date(self):
@@ -313,7 +313,7 @@ class TestAnalyticsServiceMergeTopIngredients:
         assert len(result) == 1
         assert result[0]['name'] == "Milk"
         assert result[0]['count'] == 5  # 3 + 2
-        assert result[0]['total_spent'] == 19.95  # 11.97 + (3.99 * 2)
+        assert result[0]['total_spent'] == pytest.approx(19.95)  # 11.97 + (3.99 * 2)
 
     def test_merge_adds_new_ingredient(self):
         """Should add new ingredient to list"""

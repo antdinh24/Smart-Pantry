@@ -26,8 +26,11 @@ def mock_app():
 
 
 @pytest.fixture
-def client(mock_app):
-    return TestClient(mock_app)
+def client(mock_app, mock_db):
+    from app.database import get_db
+    mock_app.dependency_overrides[get_db] = lambda: mock_db
+    yield TestClient(mock_app)
+    mock_app.dependency_overrides.clear()
 
 
 @pytest.fixture

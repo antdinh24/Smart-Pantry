@@ -42,6 +42,7 @@
     },
     "plugins": [
       "expo-sqlite",
+      "expo-splash-screen",
       "expo-dev-client",
       [
         "expo-camera",
@@ -55,13 +56,7 @@
           "photosPermission": "Allow Smart Pantry to access your photo library to upload receipt images."
         }
       ],
-      [
-        "react-native-vision-camera",
-        {
-          "cameraPermissionText": "Allow Smart Pantry to access your camera to scan receipts and barcodes.",
-          "enableCodeScanner": true
-        }
-      ],
+      "expo-font"
     ],
     "extra": {
       "eas": {

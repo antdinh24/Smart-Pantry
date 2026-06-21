@@ -24,13 +24,7 @@ interface Env {
 
 // Load environment variables
 const getEnvVar = (key: string, defaultValue?: string): string => {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/ffe8eaa6-9082-45b1-bd8b-1379e0e455b1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'config/env.ts:26',message:'getEnvVar called',data:{key,hasDefault:!!defaultValue,processEnvValue:!!process.env[key],hypothesisId:'C'},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix'})}).catch(()=>{});
-  // #endregion
   const value = process.env[key] || defaultValue
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/ffe8eaa6-9082-45b1-bd8b-1379e0e455b1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'config/env.ts:30',message:'getEnvVar result',data:{key,hasValue:!!value,valueLength:value?.length||0,hypothesisId:'C'},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix'})}).catch(()=>{});
-  // #endregion
   if (!value) {
     throw new Error(`Missing environment variable: ${key}`)
   }

@@ -57,7 +57,7 @@ class ScanReceiptRequest(BaseModel):
 
 class ProcessReceiptRequest(BaseModel):
     """Request body for processing OCR text"""
-    ocr_text: str = Field(..., min_length=1, description="Raw OCR text from receipt image")
+    ocr_text: str = Field(..., description="Raw OCR text from receipt image")
 
 
 class LineItem(BaseModel):

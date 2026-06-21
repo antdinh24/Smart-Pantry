@@ -50,7 +50,7 @@ export default function LoginScreen() {
    * useAuth() gives us access to signIn() and the loading state from AuthContext.
    * We don't need `user` here because App.tsx handles the redirect once user is set.
    */
-  const { signIn } = useAuth()
+  const { signIn, signInAsGuest } = useAuth()
 
   // ── Form field state ──────────────────────────────────────────────────────
 
@@ -77,6 +77,25 @@ export default function LoginScreen() {
    * Null when there's no error (nothing is shown).
    */
   const [error, setError] = useState<string | null>(null)
+
+  /**
+   * handleGuestSignIn
+   *
+   * Calls AuthContext.signInAsGuest() which creates an anonymous Supabase session.
+   * On success, App.tsx sees the non-null user and switches to the main app stack.
+   * Recipe generation and receipt scanning are blocked inside those screens.
+   */
+  const handleGuestSignIn = async () => {
+    setError(null)
+    setLoading(true)
+    try {
+      await signInAsGuest()
+    } catch (err: any) {
+      setError(err.message || 'Guest sign in failed. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   /**
    * handleSignIn
@@ -230,6 +249,39 @@ export default function LoginScreen() {
             <TouchableOpacity onPress={() => navigation.navigate("Register")}>
               <Text style={styles.footerLink}>Create one</Text>
             </TouchableOpacity>
+          </View>
+
+          {/* ── Guest access ── */}
+          <View style={styles.guestSection}>
+            {/*
+             * Divider row — a horizontal line with "or" in the middle.
+             * Visually separates the primary auth actions from the guest option,
+             * which is a lower-commitment path.
+             */}
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            {/*
+             * Guest button — styled as an outlined ghost button, not the filled
+             * green primary style, to signal it's a lesser action than Sign In.
+             * Disabled while loading to prevent double-taps.
+             */}
+            <TouchableOpacity
+              style={[styles.guestButton, loading && styles.guestButtonDisabled]}
+              onPress={handleGuestSignIn}
+              disabled={loading}
+            >
+              <Icon name="user" size={16} color="#64748b" />
+              <Text style={styles.guestButtonText}>Continue as Guest</Text>
+            </TouchableOpacity>
+
+            {/* Clarify what "guest" means so there's no confusion about data loss */}
+            <Text style={styles.guestNote}>
+              Guest sessions are temporary. Create an account to keep your data.
+            </Text>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -385,5 +437,53 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: "#10b981",
+  },
+
+  // ── Guest access ──────────────────────────────────────────────────────────
+
+  guestSection: {
+    marginTop: 8,
+  },
+  dividerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 16,
+    marginTop: 8,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "#334155",
+  },
+  dividerText: {
+    fontSize: 13,
+    color: "#475569",
+    marginHorizontal: 12,
+  },
+  /** Outlined ghost style — less prominent than the filled green Sign In button */
+  guestButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 13,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#334155",
+    marginBottom: 10,
+  },
+  guestButtonDisabled: {
+    opacity: 0.5,
+  },
+  guestButtonText: {
+    fontSize: 15,
+    fontWeight: "500",
+    color: "#94a3b8",
+  },
+  guestNote: {
+    fontSize: 12,
+    color: "#475569",
+    textAlign: "center",
+    lineHeight: 17,
   },
 })

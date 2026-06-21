@@ -209,8 +209,10 @@ class ReceiptParser:
         # Tier 2: Hardcoded patterns (always available)
         for line in header_lines:
             line_lower = line.lower()
+            # Also match space-collapsed version to handle OCR artifacts like "W A L M A R T"
+            line_compact = re.sub(r'(?<=[a-z]) (?=[a-z])', '', line_lower)
             for pattern, merchant_name in ReceiptParser.DEFAULT_MERCHANT_PATTERNS:
-                if re.search(pattern, line_lower):
+                if re.search(pattern, line_lower) or re.search(pattern, line_compact):
                     return merchant_name
 
         # Tier 3: All database patterns (includes regional merchants)
@@ -277,7 +279,12 @@ class ReceiptParser:
                         year, month, day = match.groups()
                         date_obj = datetime.strptime(f"{year}-{month}-{day}", date_format)
                     else:
-                        date_obj = datetime.strptime(match.group(0), date_format)
+                        # Build date string from named groups to avoid comma ambiguity
+                        # (regex allows optional comma: "Dec 25, 2024" or "Dec 25 2024")
+                        month_str, day_str, year_str = match.groups()
+                        date_obj = datetime.strptime(
+                            f"{month_str} {int(day_str):02d} {year_str}", date_format
+                        )
 
                     # Validate: not in future, not more than 1 year old
                     if date_obj <= datetime.now() and (datetime.now() - date_obj).days < 365:
@@ -333,6 +340,8 @@ class ReceiptParser:
                 if qty_match:
                     quantity = int(qty_match.group(1))
                     item_text = re.sub(r'\d+\s*[@xX]|\bQTY\s*\d+', '', item_text, flags=re.IGNORECASE).strip()
+                    # Remove unit price left behind (e.g., "$0.59" in "Bananas $0.59" after qty strip)
+                    item_text = re.sub(r'\$?\d+\.\d{2}', '', item_text).strip()
 
                 item_name = re.sub(r'\s+', ' ', item_text).strip()
 
@@ -457,9 +466,11 @@ class ReceiptParser:
         if parsed_data.get('line_items') and len(parsed_data['line_items']) > 0:
             score += 0.3
 
-        items_sum = sum(item['price'] * item['quantity'] for item in parsed_data.get('line_items', []))
+        line_items = parsed_data.get('line_items', [])
+        items_sum = sum(item['price'] * item['quantity'] for item in line_items)
         total = parsed_data.get('total_amount', 0)
-        if abs(items_sum - total) < 1.0:  # Within $1.00 tolerance
+        # Only award total-match bonus when items exist; 0 == 0 is a false positive
+        if line_items and abs(items_sum - total) < 1.0:
             score += 0.3
 
         return min(score, 1.0)

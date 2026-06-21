@@ -51,6 +51,7 @@ import { useNavigation } from "@react-navigation/native"
 import { NativeStackNavigationProp } from "@react-navigation/native-stack"
 import { RootStackParamList } from "../types/navigation"
 import { APIService } from "../services/api"
+import { useAuth } from "../contexts/AuthContext"
 
 /** Type alias so TypeScript knows which screen we're on and what we can navigate to. */
 type ScanNav = NativeStackNavigationProp<RootStackParamList, "Scan">
@@ -75,6 +76,14 @@ export default function ScanScreen() {
    * We use this hook instead of manually calling Permissions API because expo-camera
    * handles the cross-platform differences between Android and iOS for us.
    */
+  /**
+   * isGuest / signOut — used to gate receipt scanning for anonymous users.
+   * Barcode scanning is allowed for guests (OpenFoodFacts is free).
+   * Receipt scanning calls GPT-4o which costs money, so it requires an account.
+   * Signing out returns the user to the AuthStack to register.
+   */
+  const { isGuest, signOut } = useAuth()
+
   const [permission, requestPermission] = useCameraPermissions()
 
   /** Controls whether the live camera feed is visible (true) or the idle placeholder is shown (false). */
@@ -199,6 +208,23 @@ export default function ScanScreen() {
    */
   const handleTakePicture = async () => {
     if (!cameraRef.current || loading) return
+
+    /**
+     * Guest gate — receipt scanning calls GPT-4o vision which costs money.
+     * Block anonymous users and prompt them to create a free account.
+     * Signing out drops them back to the AuthStack to register.
+     */
+    if (isGuest) {
+      Alert.alert(
+        "Account Required",
+        "Create a free account to scan receipts. You get 8 free scans per month.",
+        [
+          { text: "Not Now", style: "cancel" },
+          { text: "Sign Up Free", onPress: () => { setCameraActive(false); signOut() } },
+        ]
+      )
+      return
+    }
 
     setLoading(true)
 

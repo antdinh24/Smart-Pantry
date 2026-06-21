@@ -41,6 +41,7 @@ import Icon from "react-native-vector-icons/Feather"
 import { useNavigation } from "@react-navigation/native"
 import { useRecipes } from "../hooks/useRecipes"
 import { usePantry } from "../hooks/usePantry"
+import { useAuth } from "../contexts/AuthContext"
 
 export default function RecipesScreen() {
   const navigation = useNavigation()
@@ -57,6 +58,13 @@ export default function RecipesScreen() {
    * whether the pantry is empty before allowing generation.
    */
   const { items: pantryItems } = usePantry()
+
+  /**
+   * isGuest / signOut — used to gate recipe generation for anonymous users.
+   * Guests can view suggestions but cannot call OpenAI (cost abuse risk).
+   * Tapping "Sign Up Free" signs them out, returning them to the AuthStack.
+   */
+  const { isGuest, signOut } = useAuth()
 
   /**
    * sortBy — controls which ordering the recipe list uses.
@@ -103,6 +111,23 @@ export default function RecipesScreen() {
    *   - Only one generation can run at a time (generating flag)
    */
   const handleGenerate = async () => {
+    /**
+     * Guest gate — recipe generation calls OpenAI which costs money.
+     * Guests are blocked from this feature to prevent abuse via unlimited
+     * anonymous accounts. Signing out returns them to the AuthStack to register.
+     */
+    if (isGuest) {
+      Alert.alert(
+        "Account Required",
+        "Create a free account to generate AI recipes. You get 10 free generations per month.",
+        [
+          { text: "Not Now", style: "cancel" },
+          { text: "Sign Up Free", onPress: () => signOut() },
+        ]
+      )
+      return
+    }
+
     // Guard: can't generate a recipe from nothing
     if (pantryItems.length === 0) {
       Alert.alert(

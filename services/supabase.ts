@@ -8,13 +8,7 @@
  * - Manages file uploads (receipt images)
  */
 
-// #region agent log
-fetch('http://127.0.0.1:7242/ingest/ffe8eaa6-9082-45b1-bd8b-1379e0e455b1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'services/supabase.ts:11',message:'Attempting to import @supabase/supabase-js',data:{hypothesisId:'B'},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix'})}).catch(()=>{});
-// #endregion
 import { createClient } from '@supabase/supabase-js'
-// #region agent log
-fetch('http://127.0.0.1:7242/ingest/ffe8eaa6-9082-45b1-bd8b-1379e0e455b1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'services/supabase.ts:13',message:'@supabase/supabase-js import successful',data:{createClientType:typeof createClient,hypothesisId:'B'},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix'})}).catch(()=>{});
-// #endregion
 import { env } from '../config/env'
 import StorageService from './storage'
 
@@ -78,6 +72,29 @@ export const SupabaseService = {
       await StorageService.setUserEmail(data.user.email || '')
     }
 
+    return data
+  },
+
+  /**
+   * signInAnonymously
+   *
+   * Creates a temporary anonymous Supabase session. The anonymous user receives
+   * a real UUID and a valid JWT, so all backend API calls work normally —
+   * pantry items are stored in Supabase under that UUID just like a regular user.
+   *
+   * Data persists between app close/open as long as the refresh token remains
+   * valid (Supabase default: 7 days of inactivity). Data is permanently lost
+   * if the user uninstalls the app or explicitly signs out without upgrading.
+   *
+   * Requires "Anonymous sign-ins" to be enabled in the Supabase dashboard:
+   * Authentication → Providers → Anonymous sign-ins → toggle ON.
+   *
+   * The anonymous session can be upgraded to a full account later via:
+   *   supabase.auth.updateUser({ email, password })
+   */
+  signInAnonymously: async () => {
+    const { data, error } = await supabase.auth.signInAnonymously()
+    if (error) throw error
     return data
   },
 

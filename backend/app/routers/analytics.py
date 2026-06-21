@@ -151,7 +151,7 @@ async def get_monthly_summary(
 
 @router.get("/year/{year}", response_model=YearlySummary)
 async def get_yearly_summary(
-    year: int = Path(..., ge=2020, le=2100, description="Year (e.g., 2025)"),
+    year: int = Path(..., description="Year (e.g., 2025)"),
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
