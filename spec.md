@@ -1,6 +1,8 @@
 # Spec — Pantry & Recipe Planner App
 
-This document is a **technical specification** derived from the Product Requirements Document (PRD). It is intended for **engineering execution**, AI-assisted development (Vercel/Cursor), and backend–frontend alignment.
+**Current Version: v0.03** — last updated 2026-06-21
+
+This document is a **technical specification** derived from the Product Requirements Document (PRD). It is intended for **engineering execution**, AI-assisted development (Vercel/Cursor), and backend–frontend alignment. Sprint plans and task tracking live in [`SPRINTS.md`](SPRINTS.md).
 
 ---
 
@@ -470,27 +472,6 @@ CREATE TABLE merchant_corrections (
 
 ---
 
-### Implementation Phases
-
-**Phase 1 (Current Sprint):**
-- ✅ Database-backed patterns with seeding
-- ✅ Hardcoded fallback mechanism
-- ✅ Basic admin endpoint for adding patterns
-
-**Phase 2 (Next Sprint):**
-- 📋 User confirmation UI in ConfirmationScreen
-- 📋 Merchant search dropdown with suggestions
-- 📋 Pattern learning on user confirmation
-- 📋 Track corrections in merchant_corrections table
-
-**Phase 3 (Future):**
-- 📋 Admin dashboard to review learned patterns
-- 📋 Pattern analytics (which merchants are most common)
-- 📋 ML model training from correction data
-- 📋 Automatic pattern merging (detect duplicates)
-
----
-
 ### Success Metrics
 
 - **Phase 1:** 80%+ merchant detection rate with hardcoded + DB patterns
@@ -786,4 +767,108 @@ The existing soft-delete pattern (`deleted = True`) is a prerequisite for correc
 - `PantryContext` reads from SQLite instead of API on mount (faster)
 - `APIService` calls become background sync rather than blocking foreground calls
 - A `SyncService` is introduced to manage the pending queue and conflict resolution
+
+---
+
+## 22. Guest Mode
+
+### Decision: Supabase Anonymous Auth (Option A)
+
+Guest users sign in via `supabase.auth.signInAnonymously()`, which creates a real anonymous Supabase session with a valid UUID and JWT. All backend API calls work normally under this identity.
+
+**Rationale:** Chosen for MVP simplicity. Option B (local-only SQLite guest) requires the offline sync layer which is deferred to Phase 2.
+
+**Prerequisite:** "Anonymous sign-ins" must be enabled in the Supabase dashboard: Authentication → Providers → Anonymous sign-ins → toggle ON.
+
+### What guest users can do
+
+| Feature | Available to guest? | Reason |
+|---|---|---|
+| Add pantry items manually | ✅ Yes | No cost |
+| Barcode lookup (OpenFoodFacts) | ✅ Yes | No cost — OpenFoodFacts is free |
+| View recipe suggestions | ✅ Yes | Read-only, no OpenAI call |
+| Generate AI recipes | ❌ Blocked | Calls OpenAI — cost abuse risk |
+| Scan receipts (GPT-4o) | ❌ Blocked | Calls OpenAI — cost abuse risk |
+
+### Data persistence
+
+Guest data is stored in Supabase PostgreSQL under the anonymous UUID — it **persists between app close/reopen** via the session stored in SecureStore, the same as a regular user session. Data is lost if the user uninstalls the app, explicitly signs out, or the Supabase refresh token expires from inactivity (default: 7 days).
+
+### Abuse protection
+
+Blocking recipe generation and receipt scanning at the UI level prevents cost abuse via unlimited anonymous accounts. Guests can create unlimited anonymous accounts, but each one can only use free features (manual pantry entry, barcode lookup), neither of which has a per-request cost.
+
+### Upgrade path
+
+Anonymous sessions can be upgraded to a full account via `supabase.auth.updateUser({ email, password })` without losing the existing pantry data. This is a Phase 2 enhancement — for MVP, guests who want an account must sign out and register fresh.
+
+### UI gates
+
+- `RecipesScreen.handleGenerate()` — checks `isGuest` before calling OpenAI; shows an Alert with "Sign Up Free" which calls `signOut()`, returning the user to the AuthStack
+- `ScanScreen.handleTakePicture()` — same gate for receipt mode only; barcode mode is unrestricted
+
+---
+
+## 23. Production Hosting
+
+### Decision: Render (free tier)
+
+The backend is deployed to [Render](https://render.com) using the free web service tier.
+
+**Why Render over Railway:**
+- Railway's free tier expired after 30 days / $5 credit — not sustainable for a pre-revenue project
+- Render's free tier has no time or credit limit
+- No credit card required
+
+**Free tier tradeoff — cold starts:**
+- Render spins the server down after 15 minutes of no traffic
+- The first API call after inactivity takes ~30 seconds while the server wakes up
+- Acceptable for a test project; upgrade to Render Starter ($7/month) when launching publicly to eliminate this
+
+**Deployment config:**
+- `render.yaml` at the repo root defines the service (root directory: `backend`, build: `pip install -r requirements.txt`, start: `uvicorn app.main:app`)
+- Render deploys automatically on every push to `main`
+- Secrets (database URL, Supabase keys, OpenAI key) are set in the Render dashboard — never committed to the repo
+
+**Stripe keys:**
+- `stripe_secret_key` and `stripe_webhook_secret` in `app/config.py` are optional fields (default empty string) because Stripe is post-MVP
+- The server starts without them; Stripe-related code will fail gracefully if called before real keys are configured
+
+---
+
+## 24. Auth Token Expiry Handling
+
+Supabase access tokens expire every hour. When an expired token reaches the backend, it returns HTTP 401.
+
+### Pattern (as implemented in `services/api.ts`)
+
+The axios response interceptor handles 401s in two steps:
+
+1. **Silent refresh** — call `supabase.auth.refreshSession()`, which uses the stored refresh token (valid for 7 days by default). If successful, update the access token in SecureStore and **retry the original request**. The user sees nothing.
+2. **Sign-out fallback** — if the refresh fails (refresh token expired, user logged out on another device, or any error), call `supabase.auth.signOut()` and clear SecureStore. On the next render cycle, `AuthContext` detects no session and returns the user to the login screen.
+
+**Why retry once (`_retry` flag):** without it, a failure on the retried request would loop. The `_retry = true` flag on the original request config ensures the interceptor only attempts a refresh once per request.
+
+**Why not call `AuthContext.signOut()`:** `api.ts` is not a React component and has no access to React context. Calling `supabase.auth.signOut()` directly is equivalent — `AuthContext.checkAuthStatus()` picks up the cleared session on the next render.
+
+---
+
+## Version History
+
+### v0.03 — 2026-06-21
+- **Added §23 Production Hosting**: Render free tier chosen over Railway (Railway trial expired). Cold start tradeoff accepted for pre-revenue test phase. Stripe config fields made optional (empty string defaults) so server starts without them until Stripe is built.
+- **Added §24 Auth Token Expiry Handling**: Silent refresh via `supabase.auth.refreshSession()` with one retry, sign-out fallback if refresh fails. Pattern lives in `services/api.ts` response interceptor.
+
+### v0.02 — 2026-06-20
+- **Added §22 Guest Mode**: Supabase anonymous auth (Option A). Chose over local-only SQLite (Option B) for MVP simplicity — SQLite offline sync is Phase 2 work. AI features (recipe generation, receipt scanning) are blocked for guests to prevent cost abuse via unlimited anonymous accounts.
+
+### v0.01 — 2026-06-20
+
+Initial versioned specification. This version captures the state of the project after Sprint 1 (backend foundation) and Sprint 2 (receipts and barcode scanning). All content above this section reflects the current design.
+
+**Changes from pre-versioned state:**
+
+- **§12 Merchant Detection — Implementation Phases checklist**: Removed the Phase 1/2/3 task checklists (✅/📋 items) from this section. Sprint task tracking now lives in `SPRINTS.md`. The architectural content (strategy, schema, learning flow, success metrics) remains here.
+- **Policy change — strikethroughs**: Prior to v0.01, changed decisions were marked with `~~strikethrough~~` inline. Going forward, inline content is updated to reflect current plans and all historical changes are recorded here in Version History. Existing strikethroughs in §5.2 and §5.5/§5.6 are pre-versioning artifacts and will be cleaned up in the next version update.
+- **Policy change — sprint plans**: Sprint and phase plans previously embedded in this file are now maintained exclusively in `SPRINTS.md`.
 

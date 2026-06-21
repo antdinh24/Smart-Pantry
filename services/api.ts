@@ -8,15 +8,10 @@
  * - Retry logic for failed requests
  */
 
-// #region agent log
-fetch('http://127.0.0.1:7242/ingest/ffe8eaa6-9082-45b1-bd8b-1379e0e455b1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'services/api.ts:11',message:'Attempting to import axios',data:{hypothesisId:'A'},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix'})}).catch(()=>{});
-// #endregion
 import axios, { AxiosInstance, AxiosError } from 'axios'
-// #region agent log
-fetch('http://127.0.0.1:7242/ingest/ffe8eaa6-9082-45b1-bd8b-1379e0e455b1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'services/api.ts:13',message:'axios import successful',data:{axiosType:typeof axios,hypothesisId:'A'},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix'})}).catch(()=>{});
-// #endregion
 import { env } from '../config/env'
 import StorageService from './storage'
+import { supabase } from './supabase'
 
 // Create axios instance
 const apiClient: AxiosInstance = axios.create({
@@ -41,15 +36,49 @@ apiClient.interceptors.request.use(
   }
 )
 
-// Response interceptor - handle errors
+// Response interceptor - handle token expiry
+//
+// When the backend returns 401, the access token has expired. We attempt a
+// silent refresh using Supabase's stored refresh token. If the refresh works,
+// we update SecureStore with the new access token and retry the original
+// request transparently — the user never knows anything happened.
+//
+// If the refresh fails (refresh token also expired, or the user was signed out
+// on another device), we sign the user out and they are returned to the login
+// screen on the next render cycle.
+//
+// WHY _retry flag: prevents an infinite retry loop. If the retried request
+// also comes back 401 (shouldn't happen, but defensive), we reject immediately.
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
-    if (error.response?.status === 401) {
-      // Token expired - handle refresh or logout
-      console.log('🔒 Unauthorized - token may be expired')
-      // TODO: Implement token refresh logic
+    const originalRequest = error.config as any
+
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true
+
+      try {
+        const { data, error: refreshError } = await supabase.auth.refreshSession()
+
+        if (refreshError || !data.session) {
+          // Refresh failed — clear local state and let the app navigate to login
+          await supabase.auth.signOut()
+          await StorageService.clearAuth()
+          return Promise.reject(error)
+        }
+
+        // Refresh succeeded — persist the new access token and retry
+        await StorageService.setAuthToken(data.session.access_token)
+        originalRequest.headers.Authorization = `Bearer ${data.session.access_token}`
+        return apiClient(originalRequest)
+
+      } catch {
+        // Unexpected error during refresh — sign out to be safe
+        await supabase.auth.signOut()
+        await StorageService.clearAuth()
+      }
     }
+
     return Promise.reject(error)
   }
 )

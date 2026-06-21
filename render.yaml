@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: smart-pantry-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    plan: free
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      # Set the remaining variables in the Render dashboard under Environment —
+      # do NOT put real secrets in this file since it is committed to git.
+      #
+      # Required variables to add in the dashboard:
+      #   DATABASE_URL         — Supabase PostgreSQL connection string
+      #   SUPABASE_URL         — https://xxxx.supabase.co
+      #   SUPABASE_KEY         — Supabase anon key
+      #   SUPABASE_SERVICE_KEY — Supabase service_role key
+      #   OPENAI_API_KEY       — OpenAI key (for receipt scanning + recipe generation)
