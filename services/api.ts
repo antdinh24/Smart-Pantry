@@ -23,9 +23,17 @@ const apiClient: AxiosInstance = axios.create({
 })
 
 // Request interceptor - add auth token
+//
+// WHY supabase.auth.getSession() instead of StorageService.getAuthToken():
+// The AuthContext never writes the access token to SecureStore — it only stores
+// userId, email, and subscription flags. The Supabase JS client manages its own
+// session in AsyncStorage and keeps it up to date after refresh. Reading from
+// supabase.auth.getSession() is always correct; reading from StorageService would
+// always return null and send requests with no Authorization header.
 apiClient.interceptors.request.use(
   async (config) => {
-    const token = await StorageService.getAuthToken()
+    const { data } = await supabase.auth.getSession()
+    const token = data.session?.access_token
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }

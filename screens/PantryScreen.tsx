@@ -4,11 +4,47 @@ import Icon from "react-native-vector-icons/Feather"
 import { useNavigation } from "@react-navigation/native"
 import { usePantry } from "../hooks/usePantry"
 import { formatExpiry, formatQuantity } from "../utils/calculations"
+import { APIService } from "../services/api"
+
+/**
+ * Test items used by the dev "Seed" button.
+ * Covers multiple categories so recipe generation has variety to work with.
+ * Only present in development builds (__DEV__ guard prevents it reaching prod).
+ */
+const DEV_TEST_ITEMS = [
+  { ingredient_name: "Eggs", quantity: 12, unit: "count", category: "dairy" },
+  { ingredient_name: "Whole Milk", quantity: 1, unit: "litre", category: "dairy" },
+  { ingredient_name: "Butter", quantity: 200, unit: "grams", category: "dairy" },
+  { ingredient_name: "Chicken Breast", quantity: 500, unit: "grams", category: "meat" },
+  { ingredient_name: "Garlic", quantity: 6, unit: "cloves", category: "produce" },
+  { ingredient_name: "All-Purpose Flour", quantity: 500, unit: "grams", category: "pantry" },
+  { ingredient_name: "Olive Oil", quantity: 500, unit: "ml", category: "pantry" },
+  { ingredient_name: "Tomatoes", quantity: 4, unit: "count", category: "produce" },
+]
 
 export default function PantryScreen() {
   const navigation = useNavigation()
   const [searchQuery, setSearchQuery] = useState("")
-  const { stats, loading, error, getFilteredItems, deleteItem } = usePantry()
+  const [seeding, setSeeding] = useState(false)
+  const { stats, loading, error, getFilteredItems, deleteItem, refreshItems } = usePantry()
+
+  /**
+   * DEV ONLY — seeds 8 common pantry items so recipe generation can be tested
+   * immediately without manually entering items one by one.
+   * Hidden behind __DEV__ so it never ships in a production build.
+   */
+  const handleSeedTestData = async () => {
+    setSeeding(true)
+    try {
+      await Promise.all(DEV_TEST_ITEMS.map(item => APIService.addPantryItem(item)))
+      await refreshItems()
+      Alert.alert("Test Data Loaded", `Added ${DEV_TEST_ITEMS.length} items to your pantry.`)
+    } catch {
+      Alert.alert("Seed Failed", "Could not add test items. Check that you are logged in and the backend is reachable.")
+    } finally {
+      setSeeding(false)
+    }
+  }
 
   /**
    * handleItemLongPress
@@ -80,12 +116,27 @@ export default function PantryScreen() {
             <Icon name="arrow-left" size={20} color="#f8fafc" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>My Pantry</Text>
-          <TouchableOpacity 
-            style={[styles.iconButton, styles.primaryButton]}
-            onPress={() => navigation.navigate("AddIngredients" as never)}
-          >
-            <Icon name="plus" size={20} color="#ffffff" />
-          </TouchableOpacity>
+          <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+            {/* DEV ONLY: seeds 8 test items so recipe generation can be tested without manual entry */}
+            {__DEV__ && (
+              <TouchableOpacity
+                style={{ paddingHorizontal: 10, paddingVertical: 6, backgroundColor: "#7c3aed", borderRadius: 6 }}
+                onPress={handleSeedTestData}
+                disabled={seeding}
+              >
+                {seeding
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={{ color: "#fff", fontSize: 13, fontWeight: "600" }}>Seed</Text>
+                }
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={[styles.iconButton, styles.primaryButton]}
+              onPress={() => navigation.navigate("AddIngredients" as never)}
+            >
+              <Icon name="plus" size={20} color="#ffffff" />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
