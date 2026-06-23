@@ -32,7 +32,8 @@
       "./node_modules/@types/react-native"
     ],
     "types": [
-      "react-native"
+      "react-native",
+      "jest"
     ]
   },
   "include": [

@@ -134,40 +134,144 @@ Do NOT use `~~strikethrough~~` inline — it clutters the active spec. All histo
 
 ## Testing Standards
 
-**Every method, function, or endpoint we create must have corresponding tests.**
+**No task is complete until its tests are written and passing. Run the full test suite before marking any work done.**
 
-### What to write tests for
+This applies to both backend and frontend. Any time a function, endpoint, screen, component, button, or conditional UI element is added or modified, the corresponding test must be created or updated in the same session.
+
+---
+
+### Tools & Locations
+
+| Layer | Framework | Location |
+|---|---|---|
+| Backend | pytest + pytest-cov | `backend/tests/` |
+| Frontend components & hooks | Jest + `@testing-library/react-native` | `screens/__tests__/`, `components/__tests__/`, `hooks/__tests__/` |
+| Frontend API mocking | `jest.mock()` (no external mock server needed) | inline in test files |
+
+Run backend tests: `cd backend && pytest`
+Run frontend tests: `npx jest` (once frontend test suite is bootstrapped)
+
+---
+
+### Backend Testing
+
+#### What to write tests for
 - Every new backend service method
 - Every new router endpoint
 - Every utility function with non-trivial logic
 
-### What makes a test suite thorough
-Tests must cover all of these categories where applicable:
+#### What makes a backend test thorough
+Cover all of these categories where applicable:
 
 1. **Happy path** — the expected successful case
-2. **Auth/access** — unauthenticated requests must be rejected (403/401)
+2. **Auth/access** — unauthenticated requests rejected (403/401)
 3. **Input validation** — missing required fields, wrong types, empty strings (422)
 4. **Edge cases** — empty input, null/None values, single-item lists, large inputs
 5. **Boundary values** — min/max limits, zero quantities, negative numbers
-6. **Error paths** — what happens when a downstream service fails (500), not found (404)
-7. **Side effects** — counters only increment on success (not on error or cache hit), DB operations happen in the right order
-8. **Response shape** — all expected fields are present with correct types
+6. **Error paths** — downstream service failure (500), resource not found (404)
+7. **Side effects** — counters only increment on success; DB operations happen in the right order
+8. **Response shape** — all expected fields present with correct types
+9. **Data isolation** — user A cannot read or modify user B's records; test with two distinct user IDs
 
-### Test file naming
-- Backend router tests: `test_routers_<router_name>.py`
-- Backend service tests: `test_services_<service_name>.py`
-- Tests go in `backend/tests/`
+#### Test file naming
+- Router tests: `test_routers_<name>.py`
+- Service tests: `test_services_<name>.py`
 
-### Mocking pattern (backend)
-- Override the DB dependency: `app.dependency_overrides[get_db] = lambda: mock_db`
-- Mock services with `@patch("app.routers.<module>.<ServiceName>.<method_name>")`
-- Always tear down overrides after each test class (`app.dependency_overrides.clear()`)
-- The `autouse` fixture `mock_supabase_token_validation` in `conftest.py` handles auth mocking
+#### Mocking pattern
+- Override DB: `app.dependency_overrides[get_db] = lambda: mock_db`
+- Mock services: `@patch("app.routers.<module>.<ServiceName>.<method>")`
+- Always tear down: `app.dependency_overrides.clear()` after each test class
+- Auth is handled by `mock_supabase_token_validation` autouse fixture in `conftest.py`
 
-### Test organisation
-- Group tests into classes by endpoint or method (`class TestGetRecipeById`, `class TestSaveRecipe`)
-- Each class tests one logical unit — do not mix endpoints in one class
+#### Organisation
+- One class per endpoint or service method (`class TestGenerateRecipe`)
 - Name tests descriptively: `test_returns_404_when_recipe_not_found`, not `test_recipe_1`
+
+---
+
+### Frontend Testing
+
+#### What to write tests for — new screen or component
+- Renders without crashing given minimal valid props
+- Renders correctly in every meaningful prop or state combination
+- Loading state (spinner shown, action button disabled)
+- Empty state (correct empty-state message shown)
+- Error state (user-readable message shown, Retry button present and functional)
+- Every conditional render branch — test both the shown and hidden paths
+- Accessibility: key interactive elements have accessible labels
+
+#### What to write tests for — new button or user interaction
+- Pressing the button calls its handler exactly once (`fireEvent.press()` + `expect(mockFn).toHaveBeenCalledTimes(1)`)
+- Pressing while loading/disabled does NOT call the handler
+- Correct arguments are passed to the handler
+
+#### What to write tests for — new form or input
+- Valid input is accepted and the submit handler is called
+- Each required field: leaving it empty blocks submission and shows an error
+- Invalid format (wrong type, too short, etc.) shows an inline error
+- Submitting a valid form calls the API with the correct payload shape
+
+#### What to write tests for — new navigation trigger
+- Tapping the element calls `navigation.navigate` with the correct screen name and params
+
+#### What to write tests for — state & context integration
+- Inserting, deleting, or updating a record updates context state and the change is immediately visible in all components reading that context (no manual refresh)
+- Adding a duplicate item updates the existing record rather than inserting a second copy
+
+#### What to write tests for — API response handling
+- Component handles a successful response and renders the expected data
+- Component does not crash when the response has missing keys, null values, or an empty array
+- Component shows an error state when the API call rejects
+
+#### Test file naming
+- Screens: `screens/__tests__/<ScreenName>.test.tsx`
+- Components: `components/__tests__/<ComponentName>.test.tsx`
+- Hooks: `hooks/__tests__/use<HookName>.test.ts`
+
+#### Mocking pattern
+```typescript
+// API service
+jest.mock('../services/api')
+const mockAPIService = APIService as jest.Mocked<typeof APIService>
+
+// Navigation
+const mockNavigate = jest.fn()
+jest.mock('@react-navigation/native', () => ({
+  useNavigation: () => ({ navigate: mockNavigate }),
+  useRoute: () => ({ params: {} }),
+}))
+
+// Auth context — wrap with a helper that accepts overrides
+function renderWithProviders(ui: ReactElement, { isGuest = false } = {}) {
+  return render(<MockAuthProvider isGuest={isGuest}>{ui}</MockAuthProvider>)
+}
+```
+
+---
+
+### Security — Check on Every Endpoint & Input
+- No sensitive data (tokens, keys, passwords, full stack traces) returned in any API response
+- User A cannot read or modify User B's data — every endpoint that fetches by ID must verify ownership
+- Receipt images and user content are not logged in plaintext
+- File uploads (receipt images): validate that the input is a valid base64 image; reject payloads that exceed a safe size before sending to OpenAI
+
+---
+
+### Error Handling — Check on Every Feature
+- All exceptions return structured JSON (`{"detail": "..."}`) — never a raw Python traceback
+- DB or network failure returns a meaningful HTTP status (503/500), not an unhandled crash
+- User-facing error messages are human-readable (no exception class names or SQL)
+- Frontend components catch API errors and show an error state; they never leave the user on a blank or frozen screen
+
+---
+
+### Before Marking Any Feature Complete
+- [ ] Backend tests written and `pytest` passes with no failures
+- [ ] Frontend tests written and `npx jest` passes with no failures
+- [ ] Auth / permission cases covered (unauthenticated, wrong user)
+- [ ] Error and edge cases covered (missing data, API failure, empty state)
+- [ ] No sensitive data exposed in responses or logs
+- [ ] Security: data isolation verified (user A cannot access user B's data)
 
 ---
 

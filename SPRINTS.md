@@ -62,6 +62,7 @@
 - [x] Make `stripe_secret_key` and `stripe_webhook_secret` optional in `app/config.py` (post-MVP, server must start without them)
 - [x] Token expiry handler in `services/api.ts` — silent refresh via Supabase, one retry, sign-out fallback
 - [x] Add `render.yaml` at repo root for Render free-tier deployment (Railway trial expired)
+- [x] Frontend Jest test suite — 139/139 passing across 7 suites (96 screen tests + 41 utils + 2 smoke)
 - [ ] Commit all changes on this branch and merge to `main`
 - [ ] Deploy backend to Render and set env vars in Render dashboard (DATABASE_URL, SUPABASE_URL, SUPABASE_KEY, SUPABASE_SERVICE_KEY, OPENAI_API_KEY)
 - [ ] Update `EXPO_PUBLIC_API_URL` in root `.env` to point at Render URL
@@ -78,6 +79,12 @@
 - CORS test (`test_cors_headers`) must include `headers={"Origin": "http://localhost"}` in the OPTIONS request — `CORSMiddleware` ignores OPTIONS requests with no `Origin` header, returning 405.
 - Float assertions on spending totals fail with precision drift (`145.67 != 145.67000000000002`) — use `pytest.approx()`.
 - `order_value` was a typo in a mock chain in `test_ingredient_search.py` — should be `order_by`.
+
+**Frontend Jest test suite (18 failures → 0, +2 smoke tests):**
+- `jest.mock('react-native/Libraries/Alert/Alert', () => ({ alert: jest.fn() }))` is incomplete. React Native exports Alert as `export {default as Alert}` — without `__esModule: true, default: { alert: jest.fn() }` in the mock, Babel's CommonJS interop resolves `Alert` to `undefined` everywhere, causing `TypeError: Cannot read properties of undefined (reading 'alert')` in both screen components and test files.
+- `new Promise(() => {})` (never-resolving) combined with `await fireEvent.press()` hangs in React 19. `act()` was updated in React 19 to wait for ALL pending promises, so an un-resolvable promise causes the test to exceed Jest's 5-second timeout. Fix: use a deferred promise (`new Promise<void>((res) => { resolve = res })`) and do NOT await the `fireEvent.press()` call. Instead fire without await, assert on synchronous side-effects (mock call counts), resolve the deferred promise, then await the press promise.
+- After the deferred-press fix: `mockFn.toHaveBeenCalledTimes(1)` works because the event handler is called synchronously inside `act()`'s synchronous phase. However, checking UI state (e.g. `queryByText(...)`) does NOT work at that point — React's re-render commit is asynchronous and only completes when `act()`'s promise resolves.
+- Smoke test (`__tests__/App.smoke.test.tsx`): `createNativeStackNavigator` must be mocked so Navigator reads the first Screen's `component` prop directly (`React.Children.toArray(children)[0]?.props?.component`) and renders it. Screen itself returns null — it is a descriptor node, not a renderable component. `expo-sqlite` must be mocked with `openDatabaseAsync` (async API, not `openDatabaseSync`). The AuthContext `console.error` on startup is benign — the Supabase default mock returns `null` where AuthContext expects a session shape; the finally block still sets `loading=false` and the login screen renders.
 - `cache_ingredient()` read `ingredient_data.get('extra_data')` but callers pass `'metadata'` key. Fixed to try `metadata` first, `extra_data` as fallback.
 
 **Android networking:**
