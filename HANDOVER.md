@@ -1,163 +1,210 @@
 # Jest Test Suite — Handover
 
-## Where we are
+## Current state
 
-**Branch:** `production-readiness`
+**Branch:** `frontend-jest-test-suite`
 
-**Overall test count:** 137 total  
-- `utils/__tests__/calculations.test.ts` — **41/41 PASS** ✓ (fully complete, no issues)  
-- `screens/__tests__/*.test.tsx` — **78/96 passing**, 18 still failing  
+**Overall test count: 139/139 PASSING** ✓
 
-Run all tests: `npm test -- --no-coverage`  
-Run only screen tests: `npm test -- --no-coverage --testPathPattern="screens"`  
-Run verbose to see pass/fail per test: add `--verbose`
+| Suite | File | Tests |
+|-------|------|-------|
+| Utility functions | `utils/__tests__/calculations.test.ts` | 41/41 |
+| Login screen | `screens/__tests__/LoginScreen.test.tsx` | 16/16 |
+| Pantry screen | `screens/__tests__/PantryScreen.test.tsx` | 20/20 |
+| Recipes screen | `screens/__tests__/RecipesScreen.test.tsx` | 20/20 |
+| Scan screen | `screens/__tests__/ScanScreen.test.tsx` | 19/19 |
+| Receipt confirm screen | `screens/__tests__/ReceiptConfirmScreen.test.tsx` | 21/21 |
+| App smoke test | `__tests__/App.smoke.test.tsx` | 2/2 |
 
----
-
-## Why RNTL v14 is different from every tutorial you'll find
-
-`@testing-library/react-native` **v14** (installed here) made TWO things async that everyone expects to be synchronous. Failing to await either causes silent state-corruption between tests.
-
-1. **`render()` is async** — internally uses `await act()`. Must be `await render(<Component />)`.
-2. **`fireEvent.press()`, `fireEvent.changeText()`, and `fireEvent(element, event)` are all async** — each uses `await act()` internally. Must be awaited everywhere.
-
-Every test in the 5 screen test files was already fixed for both of these.
+Run full suite: `npm test -- --no-coverage`  
+Run a specific file: `npm test -- --no-coverage --testPathPattern="LoginScreen" --verbose`
 
 ---
 
-## The 18 remaining failures
+## What was completed this session
 
-### 1. "Loading state" tests (LoginScreen) — 5 second Jest timeout
+1. **Fixed Alert mock** (`jest-setup.ts`) — the old mock `{ alert: jest.fn() }` had no `default` export. React Native re-exports Alert as `export { default as Alert }`, so without `__esModule: true, default: { alert: jest.fn() }` the Alert was `undefined` in both screen components and test files — causing 16 of the 18 failures with `TypeError: Cannot read properties of undefined (reading 'alert')`.
 
-These two tests use a **never-resolving promise** to simulate an in-flight request:
+2. **Fixed LoginScreen loading state tests** — two tests used `new Promise(() => {})` (never resolves) combined with `await fireEvent.press()`. React 19's `act()` waits for ALL pending promises, so the test hung past the 5-second timeout. Fixed with a deferred promise: do NOT await the `fireEvent.press()` call, assert on mock call count (called synchronously inside `act()`), then resolve the deferred and await the press promise.
+
+3. **Added App smoke test** (`__tests__/App.smoke.test.tsx`) — verifies the app boots without crashing and routes unauthenticated users to the login screen. Key learnings for this file are in the Notable Gotchas section below.
+
+---
+
+## What to do next (priority order)
+
+### Priority 1 — Tests for the 8 screens with zero coverage
+
+These screens currently have **no tests at all**. Any bug in them is invisible to CI. They use the same mocking patterns already established — this is the fastest high-value work.
+
+**Screens to cover (suggested order):**
+
+| Screen | File | What to test |
+|--------|------|-------------|
+| `RegisterScreen` | `screens/__tests__/RegisterScreen.test.tsx` | Form renders, email/password/confirm validation, signUp call, navigate to Login |
+| `HomeScreen` | `screens/__tests__/HomeScreen.test.tsx` | Renders stats, nav buttons route to correct screens, loading/empty state |
+| `BarcodeResultScreen` | `screens/__tests__/BarcodeResultScreen.test.tsx` | Displays product name/brand, "Add to Pantry" calls API, success navigates back |
+| `EditPantryItemScreen` | `screens/__tests__/EditPantryItemScreen.test.tsx` | Pre-populated form, quantity/unit validation, save calls updatePantryItem, cancel navigates back |
+| `GroceryScreen` | `screens/__tests__/GroceryScreen.test.tsx` | List renders, check-off toggles, clear-completed, empty state |
+| `AddIngredientsScreen` | `screens/__tests__/AddIngredientsScreen.test.tsx` | Input + add, duplicate handling, bulk add to pantry |
+| `ScheduleScreen` | `screens/__tests__/ScheduleScreen.test.tsx` | Week grid renders, drag/drop placeholder if applicable, meal slot interactions |
+| `RecipeDetailScreen` | `screens/__tests__/RecipeDetailScreen.test.tsx` | Fetches recipe on mount, renders ingredients + instructions, loading/error states |
+
+For each screen, follow the checklist in `CLAUDE.md` under "Frontend Testing" — render, loading, error, empty, interaction, navigation, and API response handling.
+
+---
+
+### Priority 2 — API service unit tests (`services/api.ts`)
+
+**Why this matters:** every frontend screen test mocks the API. If the backend changes a response shape, endpoint URL, or required field, all 139 tests still pass even though the live app is broken. API service tests are the only thing that catches this class of bug without a running backend.
+
+Create `services/__tests__/api.test.ts`. Mock `axios` at the module level and test:
+
+- Correct endpoint URLs are called (`GET /api/v1/pantry`, etc.)
+- Request payloads are shaped correctly (field names, types)
+- Successful responses are parsed and returned correctly
+- 4xx/5xx responses throw with a meaningful error message
+- **The 401 → token refresh → retry interceptor** — this is the trickiest and most important:
+  - First call returns 401 → `supabase.auth.refreshSession()` is called → request is retried with new token
+  - If refresh also fails → `supabase.auth.signOut()` is called
+  - The `_retry` flag prevents infinite loops
+- Auth header is set correctly from SecureStore token
 
 ```typescript
-it('disables the Sign In button while loading', async () => {
-  mockSignIn.mockReturnValue(new Promise(() => {}));  // never resolves!
-  // ...
-  await fireEvent.press(getByText('Sign In'));  // HANGS FOREVER
+// Skeleton for the interceptor test:
+jest.mock('axios')
+jest.mock('../services/supabase', ...)  // already in jest-setup.ts globally
+jest.mock('expo-secure-store', ...)     // already in jest-setup.ts globally
+
+it('retries a 401 with a refreshed token', async () => {
+  // First call → 401, second call → 200
+  // Assert refreshSession was called once, request was retried
+})
 ```
 
-**Root cause:** React 19's `act()` was updated to wait for **all pending promises** before completing. When `handleSignIn` calls `await signIn(...)` and signIn returns a never-resolving promise, `act()` inside `fireEvent.press` also waits for it forever. The test exceeds Jest's 5-second timeout.
+---
 
-**Fix:** Replace the never-resolving promise with a deferred promise that you explicitly resolve after asserting the loading state, OR simplify the test to only assert `mockSignIn` was called once (not testing the disabled visual state). Example fix:
+## Notable gotchas — read before writing any new tests
 
+### RNTL v14 async rules (non-negotiable)
 ```typescript
-it('disables the Sign In button while loading', async () => {
-  let resolveSignIn!: (v: void) => void;
-  mockSignIn.mockReturnValue(new Promise<void>((res) => { resolveSignIn = res; }));
-  const { getByText, getByPlaceholderText } = await render(<LoginScreen />);
-  await fireEvent.changeText(getByPlaceholderText('you@example.com'), 'a@b.com');
-  await fireEvent.changeText(getByPlaceholderText('Your password'), 'pass');
-  
-  // DO NOT await — act() would wait for the signIn promise which never resolves
-  // Instead: fire without await, then immediately assert, then resolve
-  const pressPromise = fireEvent.press(getByText('Sign In'));
-  expect(mockSignIn).toHaveBeenCalledTimes(1);
-  resolveSignIn();       // unblock the pending signIn
-  await pressPromise;    // now let act() complete
-});
+// render() is async — always await it
+const { getByText } = await render(<MyScreen />)
+
+// fireEvent is async — always await it
+await fireEvent.press(getByText('Submit'))
+await fireEvent.changeText(getByPlaceholderText('Email'), 'a@b.com')
+
+// wait for async side effects
+await waitFor(() => expect(mockFn).toHaveBeenCalled())
 ```
 
-OR just reframe the test to not need a hanging promise:
+### Never use `new Promise(() => {})` for loading state tests
+React 19's `act()` waits for ALL pending promises. A never-resolving promise hangs the test past the 5-second timeout. Use a deferred promise instead:
 
 ```typescript
-it('calls signIn exactly once per button tap', async () => {
-  mockSignIn.mockResolvedValue(undefined);
-  const { getByText, getByPlaceholderText } = await render(<LoginScreen />);
-  await fireEvent.changeText(getByPlaceholderText('you@example.com'), 'a@b.com');
-  await fireEvent.changeText(getByPlaceholderText('Your password'), 'pass');
-  await fireEvent.press(getByText('Sign In'));
-  await waitFor(() => expect(mockSignIn).toHaveBeenCalledTimes(1));
-});
+let resolveIt!: () => void
+mockFn.mockReturnValue(new Promise<void>((res) => { resolveIt = res }))
+
+// DO NOT await the press — act() fires the handler synchronously then suspends
+const pressPromise = fireEvent.press(button)
+// At this point the handler HAS been called (synchronously inside act())
+expect(mockFn).toHaveBeenCalledTimes(1)
+resolveIt()       // unblock the promise
+await pressPromise // let act() complete
 ```
 
-**Affected tests in `LoginScreen.test.tsx`:**
-- `'disables the Sign In button while loading'`
-- `'disables the Guest button while loading'`
+**Important:** after the non-awaited `fireEvent.press`, you can assert on mock call counts (synchronous) but NOT on UI state (e.g. `queryByText`). React's re-render commit is async — it only happens after `act()`'s promise resolves. Don't write `expect(queryByText('Sign In')).toBeNull()` without awaiting.
 
-### 2. Other failures (not yet diagnosed)
+### Alert mock — must include `__esModule: true` and `default`
+```typescript
+// jest-setup.ts — already correct, do not revert this:
+jest.mock('react-native/Libraries/Alert/Alert', () => ({
+  __esModule: true,
+  default: { alert: jest.fn() },
+}))
+// Without __esModule + default, Alert is undefined everywhere
+// (React Native: export {default as Alert} — the default property is what gets used)
+```
 
-After the loading-state tests above time out, they can cause test pollution for later tests in the same file. Once the loading-state tests are fixed, check how many remaining failures persist and investigate from there. Run with `--verbose` to see exactly which tests are failing.
+In test files, import and assert:
+```typescript
+import { Alert } from 'react-native'
+// ...
+expect(Alert.alert).toHaveBeenCalledWith('Title', expect.any(String), expect.any(Array))
+```
 
----
+### `__DEV__` is `true` in Jest
+The Seed button is visible in PantryScreen tests. This is intentional and expected. Don't add `if (!__DEV__)` to hide it — just account for it in the test (or assert it exists).
 
-## Files changed in this session
-
-| File | Status | What changed |
-|------|--------|-------------|
-| `screens/__tests__/LoginScreen.test.tsx` | ✏️ Updated | All `render()` → `await render()`, all `fireEvent.*` → `await fireEvent.*` |
-| `screens/__tests__/RecipesScreen.test.tsx` | ✏️ Updated | Same |
-| `screens/__tests__/PantryScreen.test.tsx` | ✏️ Updated | Same |
-| `screens/__tests__/ScanScreen.test.tsx` | ✏️ Updated | Same |
-| `screens/__tests__/ReceiptConfirmScreen.test.tsx` | ✏️ Updated | Same |
-| `utils/__tests__/calculations.test.ts` | ✅ Done last session | 41/41 PASS, no changes needed |
-| `jest-setup.ts` | ✅ Done last session | Removed `@testing-library/react-native/extend-expect` (not in v14) |
-| `package.json` | ✅ Done last session | `setupFilesAfterEnv` key (was `setupFilesAfterFramework`, invalid in Jest 29) |
-| `tsconfig.json` | ✅ Done last session | Added `"jest"` to `"types"` array |
-| `__mocks__/react-native-vector-icons.js` | ✅ Done last session | Icon mock renders as `<Text testID="icon-{name}" />` |
-
----
-
-## Key config facts
-
-- **Jest preset:** `jest-expo` (in `package.json`)  
-- **Setup file:** `jest-setup.ts` (registered in `setupFilesAfterEnv`)  
-- **RNTL version:** `@testing-library/react-native@14.0.0` — render AND fireEvent are async  
-- **React version:** 19 — `act()` now waits for all pending promises (breaks never-resolving promise pattern)  
-- **Vector icon mock:** `__mocks__/react-native-vector-icons.js` — icons render as `<Text testID="icon-{name}">`; press the icon via `getByTestId('icon-eye')`, etc.  
-- **Auth test mock:** `mock_supabase_token_validation` autouse fixture handles auth in backend tests (different from frontend)  
-- **`__DEV__`** is `true` in Jest, so the Seed button is visible in PantryScreen tests
+### App smoke test gotchas (for reference if you need to extend it)
+- `expo-sqlite` must be mocked with `openDatabaseAsync` (async API) not `openDatabaseSync`
+- `createNativeStackNavigator` mock: Navigator reads `React.Children.toArray(children)[0]?.props?.component` directly — `Screen` itself returns null (it's a descriptor). This renders only the initial route.
+- The AuthContext logs `console.error('Failed to check auth status:')` during the smoke test — this is benign. The Supabase default mock returns `null` where AuthContext expects a session shape; the `finally` block still sets `loading=false` and the login screen renders correctly.
+- `NavigationContainer` must be mocked as a passthrough — it requires a native bridge unavailable in Jest.
 
 ---
 
-## Smoke test script mentioned earlier
+## Global mocking cheat sheet
 
-The conversation mentioned a smoke test script (`scripts/check-backend.js`) in `package.json`. This is an existing script (`npm run backend:check`) unrelated to the Jest test suite. It checks if the backend is running. It was not part of this session's work.
+All of these are set up in `jest-setup.ts` and apply to every test file automatically:
 
-If a new smoke test script is needed for the frontend (e.g., run `npm test -- --no-coverage` in CI), no additional setup is needed — Jest is already configured.
+| Module | What's mocked |
+|--------|--------------|
+| `expo-camera` | `CameraView` as plain View, `useCameraPermissions` → `[{granted:false}, mockRequestFn]` |
+| `expo-secure-store` | `getItemAsync` → null, `setItemAsync` / `deleteItemAsync` → resolved |
+| `expo-image-picker` | `launchImageLibraryAsync` → `{ canceled: true }` |
+| `services/supabase` | `supabase.auth.getSession` → `{ data: { session: null }, error: null }` |
+| `react-native/Libraries/Alert/Alert` | `default: { alert: jest.fn() }` |
+| `react-native-vector-icons/*` | Icons render as `<Text testID="icon-{name}" />` (via `__mocks__/`) |
 
----
-
-## How to resume
-
-1. Open `screens/__tests__/LoginScreen.test.tsx`
-2. Fix the two "loading state" tests (see examples above) — the key constraint is **never use `new Promise(() => {})` with `await fireEvent` in React 19**
-3. Run `npm test -- --no-coverage --testPathPattern="screens" --verbose` to see remaining failures
-4. Investigate any failures that remain after the loading tests are fixed
-5. Once all 96 screen tests pass, run full suite: `npm test -- --no-coverage`
-6. Update `SPRINTS.md` to mark the test suite tasks complete
-
----
-
-## Mocking cheat sheet for these tests
+Per-test mocking patterns:
 
 ```typescript
-// Mock a hook (e.g., usePantry):
-jest.mock('../../hooks/usePantry', () => ({ usePantry: jest.fn() }))
-// Then in beforeEach:
-(usePantry as jest.Mock).mockReturnValue({ items: [], deleteItem: mockDeleteItem, ... })
-
-// Mock navigation:
+// Navigation
 const mockNavigate = jest.fn()
 jest.mock('@react-navigation/native', () => ({
   useNavigation: () => ({ navigate: mockNavigate, goBack: jest.fn() }),
 }))
 
-// Mock useRoute (ReceiptConfirmScreen):
+// useRoute (screens that receive params)
 const mockUseRoute = jest.fn()
 jest.mock('@react-navigation/native', () => ({
   useNavigation: () => ({ navigate: mockNavigate, goBack: mockGoBack }),
   useRoute: () => mockUseRoute(),
 }))
-// Then in beforeEach: mockUseRoute.mockReturnValue({ params: DEFAULT_PARAMS })
+// In beforeEach: mockUseRoute.mockReturnValue({ params: { ... } })
 
-// Alert is globally mocked in jest-setup.ts:
-// jest.mock('react-native/Libraries/Alert/Alert', () => ({ alert: jest.fn() }))
-// Assert it was called: expect(Alert.alert).toHaveBeenCalledWith('Title', ...)
+// Auth context
+jest.mock('../../contexts/AuthContext', () => ({ useAuth: jest.fn() }))
+// In beforeEach: (useAuth as jest.Mock).mockReturnValue({ isGuest: false, signOut: jest.fn() })
 
-// RNTL v14 async pattern (required):
-const { getByText } = await render(<MyScreen />)
-await fireEvent.press(getByText('Submit'))
-await waitFor(() => expect(mockFn).toHaveBeenCalled())
+// A hook (e.g. usePantry)
+jest.mock('../../hooks/usePantry', () => ({ usePantry: jest.fn() }))
+// In beforeEach: (usePantry as jest.Mock).mockReturnValue({ items: [], deleteItem: mockFn, ... })
+
+// APIService
+jest.mock('../../services/api', () => ({
+  APIService: { methodName: jest.fn().mockResolvedValue(data) },
+}))
+
+// Press an icon button (vector-icons mock renders as Text with testID)
+await fireEvent.press(getByTestId('icon-eye'))
+await fireEvent.press(getByTestId('icon-x'))
+await fireEvent.press(getByTestId('icon-camera'))
 ```
+
+---
+
+## Coverage gap summary
+
+| Area | Status |
+|------|--------|
+| 5 main screens (Login, Pantry, Recipes, Scan, ReceiptConfirm) | ✅ 96 tests |
+| Utility functions | ✅ 41 tests |
+| App boot / auth gate | ✅ 2 smoke tests |
+| **8 screens (Register, Home, BarcodeResult, EditPantryItem, Grocery, AddIngredients, Schedule, RecipeDetail)** | ❌ 0 tests |
+| **`services/api.ts` (endpoint URLs, payload shape, 401 interceptor)** | ❌ 0 tests |
+| Real API integration (backend contract) | ❌ mocked only |
+| Real camera / barcode / OCR pipeline | ❌ mocked only |
+| End-to-end navigation flows | ❌ only assert navigate() was called |
