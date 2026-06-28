@@ -46,6 +46,7 @@ import {
   Alert,
 } from "react-native"
 import { CameraView, useCameraPermissions } from "expo-camera"
+import * as ImagePicker from "expo-image-picker"
 import Icon from "react-native-vector-icons/Feather"
 import { useNavigation } from "@react-navigation/native"
 import { NativeStackNavigationProp } from "@react-navigation/native-stack"
@@ -94,9 +95,9 @@ export default function ScanScreen() {
 
   /**
    * Tracks whether the user wants barcode scanning or receipt photo capture.
-   * Defaults to "barcode" (existing behavior) so existing users see no change.
+   * Defaults to "receipt" — the more common use case for returning users.
    */
-  const [mode, setMode] = useState<ScanMode>("barcode")
+  const [mode, setMode] = useState<ScanMode>("receipt")
 
   /**
    * Ref to the CameraView so we can call takePictureAsync() in receipt mode.
@@ -183,7 +184,37 @@ export default function ScanScreen() {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // RECEIPT MODE HANDLER
+  // RECEIPT RESULT HELPER
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * processReceiptResult
+   *
+   * Shared by handleTakePicture (camera) and handleGalleryPick (gallery).
+   * Adds the frontend-only `selected: true` flag to each line item and
+   * navigates to ReceiptConfirmScreen.
+   *
+   * WHY `selected` is added here and not in the backend:
+   *   It's purely a UI concern — the checkbox state on ReceiptConfirmScreen.
+   *   Keeping it out of the API response keeps the backend schema clean.
+   *
+   * @param result - The raw response from APIService.scanReceipt
+   */
+  const processReceiptResult = (result: any) => {
+    const itemsWithSelection = (result.line_items ?? []).map((item: any) => ({
+      ...item,
+      selected: true,
+    }))
+    navigation.navigate("ReceiptConfirm", {
+      receiptId: result.receipt_id,
+      items: itemsWithSelection,
+      merchant: result.merchant_name ?? null,
+      total: result.total_amount ?? 0,
+    })
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // RECEIPT MODE HANDLER — CAMERA SHUTTER
   // ─────────────────────────────────────────────────────────────────────────
 
   /**
@@ -195,12 +226,13 @@ export default function ScanScreen() {
    *
    * FLOW:
    *   1. Guard against double-taps (loading flag)
-   *   2. takePictureAsync({ base64: true, quality: 0.7 }) — 70% quality
+   *   2. Guest gate — receipt scanning costs money, block anonymous users
+   *   3. takePictureAsync({ base64: true, quality: 0.7 }) — 70% quality
    *      balances image clarity against upload size (~200-400 KB)
-   *   3. POST /receipts/scan with base64 image
-   *   4a. On success → navigate to ReceiptConfirmScreen
-   *   4b. On HTTP 429 → show upgrade prompt Alert
-   *   4c. On other error → show generic retry Alert
+   *   4. POST /receipts/scan with base64 image
+   *   5a. On success → processReceiptResult → navigate to ReceiptConfirmScreen
+   *   5b. On HTTP 429 → show upgrade prompt Alert
+   *   5c. On other error → show generic retry Alert
    *
    * WHY quality: 0.7?
    *   GPT-4o can read receipts at medium quality. Higher quality (1.0) triples
@@ -229,39 +261,17 @@ export default function ScanScreen() {
     setLoading(true)
 
     try {
-      // Capture still photo with base64 encoding included
       const photo = await cameraRef.current.takePictureAsync({
         base64: true,
         quality: 0.7,
       })
 
-      if (!photo?.base64) {
-        throw new Error("Camera did not return image data")
-      }
+      if (!photo?.base64) throw new Error("Camera did not return image data")
 
-      // Send to backend — GPT-4o vision extracts and structures the line items
       const result = await APIService.scanReceipt(photo.base64)
-
-      /**
-       * Add `selected: true` to every line item.
-       * The backend returns items without this field — it's frontend-only for
-       * driving the checkboxes on ReceiptConfirmScreen. All items default to
-       * selected so the user just needs to uncheck what they don't want.
-       */
-      const itemsWithSelection = (result.line_items ?? []).map((item: any) => ({
-        ...item,
-        selected: true,
-      }))
-
-      navigation.navigate("ReceiptConfirm", {
-        receiptId: result.receipt_id,
-        items: itemsWithSelection,
-        merchant: result.merchant_name ?? null,
-        total: result.total_amount ?? 0,
-      })
+      processReceiptResult(result)
     } catch (error: any) {
       if (error?.response?.status === 429) {
-        // Free tier limit hit — show upgrade prompt instead of error
         Alert.alert(
           "Monthly Limit Reached",
           "You've used all 8 free receipt scans this month. Upgrade to Premium for unlimited scans.",
@@ -271,6 +281,120 @@ export default function ScanScreen() {
         Alert.alert(
           "Scan Failed",
           "Could not process the receipt. Make sure the receipt is well-lit and fully in frame, then try again.",
+          [{ text: "OK" }]
+        )
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // GALLERY HANDLER (both modes)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * handleGalleryPick
+   *
+   * Lets the user choose an existing photo from their device gallery instead
+   * of opening the live camera. Works in both receipt and barcode mode:
+   *
+   *   RECEIPT MODE:
+   *     Sends the picked image as base64 to POST /receipts/scan (same path as
+   *     the camera shutter). Navigates to ReceiptConfirmScreen on success.
+   *
+   *   BARCODE MODE:
+   *     Calls CameraView.scanFromURLAsync() to decode the barcode in the
+   *     still image — no live camera required. Then does the same OpenFoodFacts
+   *     lookup as the live barcode scanner and navigates to BarcodeResultScreen.
+   *
+   * WHY scanFromURLAsync for barcode from gallery?
+   *   It's a static method on CameraView (available in expo-camera ≥ v14) that
+   *   decodes barcodes from any local file URI without opening the camera.
+   *   Avoids needing a new backend endpoint or the deprecated expo-barcode-scanner.
+   *
+   * FLOW:
+   *   1. Guest gate if receipt mode (barcode gallery is free)
+   *   2. Open native image library picker
+   *   3. If canceled → early return (no loading shown)
+   *   4. Set loading spinner
+   *   5a. Receipt → scanReceipt(base64) → processReceiptResult
+   *   5b. Barcode → scanFromURLAsync(uri) → lookupBarcode(data) → BarcodeResult
+   *   6. Error handling: 429 → upgrade prompt, other → retry Alert
+   */
+  const handleGalleryPick = async () => {
+    // Only receipt mode is gated — barcode gallery uses OpenFoodFacts (free)
+    if (mode === "receipt" && isGuest) {
+      Alert.alert(
+        "Account Required",
+        "Create a free account to scan receipts. You get 8 free scans per month.",
+        [
+          { text: "Not Now", style: "cancel" },
+          { text: "Sign Up Free", onPress: () => signOut() },
+        ]
+      )
+      return
+    }
+
+    // Open the native gallery picker. base64 is only needed for receipt mode
+    // (GPT-4o vision accepts base64). Barcode mode only needs the file URI.
+    // 'images' is the non-deprecated string form (MediaTypeOptions was removed in v17).
+    const pickerResult = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: 'images' as any,
+      base64: mode === "receipt",
+      quality: 0.7,
+    })
+
+    // User dismissed the picker without selecting — nothing to do
+    if (pickerResult.canceled || !pickerResult.assets?.[0]) return
+
+    const asset = pickerResult.assets[0]
+    setLoading(true)
+
+    try {
+      if (mode === "receipt") {
+        if (!asset.base64) throw new Error("Image data unavailable")
+        const result = await APIService.scanReceipt(asset.base64)
+        processReceiptResult(result)
+      } else {
+        // Decode the barcode from the still image without a live camera feed.
+        // Cast to any: the TypeScript types for expo-camera v17 don't yet expose
+        // scanFromURLAsync on the CameraView class, but the method exists at runtime.
+        const barcodes = await (CameraView as any).scanFromURLAsync(asset.uri, [
+          "ean13", "ean8", "upc_a", "upc_e", "qr", "code128", "code39",
+        ])
+
+        if (barcodes.length === 0) {
+          Alert.alert(
+            "No Barcode Found",
+            "Could not detect a barcode in this image. Try scanning the product directly with the camera.",
+            [{ text: "OK" }]
+          )
+          return
+        }
+
+        // Found a barcode — look it up in OpenFoodFacts (same as live scan)
+        const barcode = barcodes[0].data
+        try {
+          const product = await APIService.lookupBarcode(barcode)
+          navigation.navigate("BarcodeResult", { product, barcode })
+        } catch {
+          // Not found in OpenFoodFacts — navigate with null so the user can
+          // enter product details manually, same as the live scan flow
+          navigation.navigate("BarcodeResult", { product: null, barcode })
+        }
+      }
+    } catch (error: any) {
+      if (error?.response?.status === 429) {
+        Alert.alert(
+          "Monthly Limit Reached",
+          "You've used all 8 free receipt scans this month. Upgrade to Premium for unlimited scans.",
+          [{ text: "Got It" }]
+        )
+      } else if (mode === "receipt") {
+        Alert.alert(
+          "Scan Failed",
+          "Could not process the receipt. Please try again.",
           [{ text: "OK" }]
         )
       }
@@ -351,8 +475,17 @@ export default function ScanScreen() {
             <Text style={styles.cameraHeaderTitle}>
               {mode === "barcode" ? "Scan Barcode" : "Scan Receipt"}
             </Text>
-            {/* Empty view on the right to keep the title visually centered */}
-            <View style={styles.iconButton} />
+            {/*
+             * Gallery button on the right keeps the title visually centered
+             * while giving the user gallery access without closing the camera.
+             */}
+            <TouchableOpacity
+              onPress={handleGalleryPick}
+              style={styles.iconButton}
+              disabled={loading}
+            >
+              <Icon name="image" size={22} color={loading ? "#475569" : "#f8fafc"} />
+            </TouchableOpacity>
           </View>
 
           {/* ── BARCODE MODE: scan frame with corner brackets ── */}
@@ -442,20 +575,6 @@ export default function ScanScreen() {
          */}
         <View style={styles.modeTabs}>
           <TouchableOpacity
-            style={[styles.modeTab, mode === "barcode" && styles.modeTabActive]}
-            onPress={() => setMode("barcode")}
-          >
-            <Icon
-              name="package"
-              size={14}
-              color={mode === "barcode" ? "#10b981" : "#94a3b8"}
-            />
-            <Text style={[styles.modeTabText, mode === "barcode" && styles.modeTabTextActive]}>
-              Barcode
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
             style={[styles.modeTab, mode === "receipt" && styles.modeTabActive]}
             onPress={() => setMode("receipt")}
           >
@@ -466,6 +585,20 @@ export default function ScanScreen() {
             />
             <Text style={[styles.modeTabText, mode === "receipt" && styles.modeTabTextActive]}>
               Receipt
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.modeTab, mode === "barcode" && styles.modeTabActive]}
+            onPress={() => setMode("barcode")}
+          >
+            <Icon
+              name="package"
+              size={14}
+              color={mode === "barcode" ? "#10b981" : "#94a3b8"}
+            />
+            <Text style={[styles.modeTabText, mode === "barcode" && styles.modeTabTextActive]}>
+              Barcode
             </Text>
           </TouchableOpacity>
         </View>
@@ -508,11 +641,28 @@ export default function ScanScreen() {
           )}
         </View>
 
-        {/* Primary action — starts the camera flow (permission check + camera view) */}
+        {/* Primary action — starts the camera, secondary picks from gallery */}
         <View style={styles.actions}>
-          <TouchableOpacity style={styles.primaryButton} onPress={handleStartCamera}>
+          <TouchableOpacity
+            style={[styles.primaryButton, loading && styles.primaryButtonDisabled]}
+            onPress={handleStartCamera}
+            disabled={loading}
+          >
             <Icon name="camera" size={20} color="#ffffff" />
             <Text style={styles.primaryButtonText}>Start Camera</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.galleryButton, loading && styles.galleryButtonDisabled]}
+            onPress={handleGalleryPick}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator size="small" color="#94a3b8" />
+            ) : (
+              <Icon name="image" size={20} color="#94a3b8" />
+            )}
+            <Text style={styles.galleryButtonText}>Choose from Gallery</Text>
           </TouchableOpacity>
         </View>
 
@@ -836,6 +986,7 @@ const styles = StyleSheet.create({
 
   actions: {
     marginBottom: 24,
+    gap: 12,
   },
   primaryButton: {
     flexDirection: "row",
@@ -846,10 +997,32 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 8,
   },
+  primaryButtonDisabled: {
+    backgroundColor: "#334155",
+  },
   primaryButtonText: {
     fontSize: 16,
     fontWeight: "600",
     color: "#ffffff",
+  },
+  /** Secondary outlined button for picking a pre-taken photo from the gallery */
+  galleryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "#334155",
+    paddingVertical: 14,
+    borderRadius: 8,
+  },
+  galleryButtonDisabled: {
+    opacity: 0.5,
+  },
+  galleryButtonText: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: "#94a3b8",
   },
   tipsCard: {
     backgroundColor: "rgba(51, 65, 85, 0.3)",

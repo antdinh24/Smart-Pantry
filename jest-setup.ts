@@ -13,14 +13,30 @@
 
 // ── expo-camera ───────────────────────────────────────────────────────────────
 // CameraView is a native view that requires device hardware.
-// Mock it as a plain View so components that render it don't crash.
-jest.mock('expo-camera', () => ({
-  CameraView: 'CameraView',
-  useCameraPermissions: jest.fn(() => [
-    { granted: false, status: 'undetermined' },
-    jest.fn().mockResolvedValue({ granted: true }),
-  ]),
-}));
+// We need a real function component (not the string shorthand 'CameraView')
+// so we can attach CameraView.scanFromURLAsync as a static jest.fn().
+// Strings are primitives and cannot hold properties.
+jest.mock('expo-camera', () => {
+  const React = require('react')
+  const { View } = require('react-native')
+
+  // Renders children identically to the real CameraView for layout purposes
+  function CameraView(props: any) {
+    return React.createElement(View, props)
+  }
+
+  // Static method used by the gallery barcode flow to decode a barcode from
+  // a still image URI without opening a live camera feed.
+  CameraView.scanFromURLAsync = jest.fn().mockResolvedValue([])
+
+  return {
+    CameraView,
+    useCameraPermissions: jest.fn(() => [
+      { granted: false, status: 'undetermined' },
+      jest.fn().mockResolvedValue({ granted: true }),
+    ]),
+  }
+});
 
 // ── expo-secure-store ─────────────────────────────────────────────────────────
 // Secure storage requires a real device keychain — returns null in tests.

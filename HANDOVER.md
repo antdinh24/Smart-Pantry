@@ -4,83 +4,67 @@
 
 **Branch:** `frontend-jest-test-suite`
 
-**Overall test count: 139/139 PASSING** ✓
+**Overall test count: 474/474 PASSING** ✓
+
+All ingredient autocomplete work is complete and passing.
 
 | Suite | File | Tests |
 |-------|------|-------|
-| Utility functions | `utils/__tests__/calculations.test.ts` | 41/41 |
-| Login screen | `screens/__tests__/LoginScreen.test.tsx` | 16/16 |
-| Pantry screen | `screens/__tests__/PantryScreen.test.tsx` | 20/20 |
-| Recipes screen | `screens/__tests__/RecipesScreen.test.tsx` | 20/20 |
-| Scan screen | `screens/__tests__/ScanScreen.test.tsx` | 19/19 |
-| Receipt confirm screen | `screens/__tests__/ReceiptConfirmScreen.test.tsx` | 21/21 |
-| App smoke test | `__tests__/App.smoke.test.tsx` | 2/2 |
+| App smoke test | `__tests__/App.smoke.test.tsx` | 2 |
+| Login screen | `screens/__tests__/LoginScreen.test.tsx` | 16 |
+| Register screen | `screens/__tests__/RegisterScreen.test.tsx` | ✓ |
+| Home screen | `screens/__tests__/HomeScreen.test.tsx` | ✓ |
+| Pantry screen | `screens/__tests__/PantryScreen.test.tsx` | 20 |
+| Barcode result screen | `screens/__tests__/BarcodeResultScreen.test.tsx` | ✓ |
+| Edit pantry item screen | `screens/__tests__/EditPantryItemScreen.test.tsx` | ✓ |
+| Add ingredients screen | `screens/__tests__/AddIngredientsScreen.test.tsx` | 18 |
+| Grocery screen | `screens/__tests__/GroceryScreen.test.tsx` | ✓ |
+| Schedule screen | `screens/__tests__/ScheduleScreen.test.tsx` | ✓ |
+| Recipe detail screen | `screens/__tests__/RecipeDetailScreen.test.tsx` | ✓ |
+| Recipes screen | `screens/__tests__/RecipesScreen.test.tsx` | 20 |
+| Scan screen | `screens/__tests__/ScanScreen.test.tsx` | 19 |
+| Receipt confirm screen | `screens/__tests__/ReceiptConfirmScreen.test.tsx` | 21 |
+| API service | `services/__tests__/api.test.ts` | 37 |
+| PantryContext | `contexts/__tests__/PantryContext.test.tsx` | 35 |
+| AuthContext | `contexts/__tests__/AuthContext.test.tsx` | 31 |
+| RecipesContext | `contexts/__tests__/RecipesContext.test.tsx` | 30 |
+| GroceryContext | `contexts/__tests__/GroceryContext.test.tsx` | 25 |
+| MealScheduleContext | `contexts/__tests__/MealScheduleContext.test.tsx` | 18 |
+| Utility functions | `utils/__tests__/calculations.test.ts` | 41 |
+| **IngredientAutocomplete** | `components/__tests__/IngredientAutocomplete.test.tsx` | **13** |
 
 Run full suite: `npm test -- --no-coverage`  
 Run a specific file: `npm test -- --no-coverage --testPathPattern="LoginScreen" --verbose`
 
 ---
 
-## What was completed this session
+## What was completed (ingredient autocomplete feature — Sprint 4)
 
-1. **Fixed Alert mock** (`jest-setup.ts`) — the old mock `{ alert: jest.fn() }` had no `default` export. React Native re-exports Alert as `export { default as Alert }`, so without `__esModule: true, default: { alert: jest.fn() }` the Alert was `undefined` in both screen components and test files — causing 16 of the 18 failures with `TypeError: Cannot read properties of undefined (reading 'alert')`.
-
-2. **Fixed LoginScreen loading state tests** — two tests used `new Promise(() => {})` (never resolves) combined with `await fireEvent.press()`. React 19's `act()` waits for ALL pending promises, so the test hung past the 5-second timeout. Fixed with a deferred promise: do NOT await the `fireEvent.press()` call, assert on mock call count (called synchronously inside `act()`), then resolve the deferred and await the press promise.
-
-3. **Added App smoke test** (`__tests__/App.smoke.test.tsx`) — verifies the app boots without crashing and routes unauthenticated users to the login screen. Key learnings for this file are in the Notable Gotchas section below.
-
----
-
-## What to do next (priority order)
-
-### Priority 1 — Tests for the 8 screens with zero coverage
-
-These screens currently have **no tests at all**. Any bug in them is invisible to CI. They use the same mocking patterns already established — this is the fastest high-value work.
-
-**Screens to cover (suggested order):**
-
-| Screen | File | What to test |
-|--------|------|-------------|
-| `RegisterScreen` | `screens/__tests__/RegisterScreen.test.tsx` | Form renders, email/password/confirm validation, signUp call, navigate to Login |
-| `HomeScreen` | `screens/__tests__/HomeScreen.test.tsx` | Renders stats, nav buttons route to correct screens, loading/empty state |
-| `BarcodeResultScreen` | `screens/__tests__/BarcodeResultScreen.test.tsx` | Displays product name/brand, "Add to Pantry" calls API, success navigates back |
-| `EditPantryItemScreen` | `screens/__tests__/EditPantryItemScreen.test.tsx` | Pre-populated form, quantity/unit validation, save calls updatePantryItem, cancel navigates back |
-| `GroceryScreen` | `screens/__tests__/GroceryScreen.test.tsx` | List renders, check-off toggles, clear-completed, empty state |
-| `AddIngredientsScreen` | `screens/__tests__/AddIngredientsScreen.test.tsx` | Input + add, duplicate handling, bulk add to pantry |
-| `ScheduleScreen` | `screens/__tests__/ScheduleScreen.test.tsx` | Week grid renders, drag/drop placeholder if applicable, meal slot interactions |
-| `RecipeDetailScreen` | `screens/__tests__/RecipeDetailScreen.test.tsx` | Fetches recipe on mount, renders ingredients + instructions, loading/error states |
-
-For each screen, follow the checklist in `CLAUDE.md` under "Frontend Testing" — render, loading, error, empty, interaction, navigation, and API response handling.
+1. **`backend/seed_ingredients.py`** — 150 common grocery ingredients seeded into `ingredient_cache` table
+2. **`services/api.ts`** — `IngredientSearchResult` type + `searchIngredients` + `selectIngredient` methods added
+3. **`components/IngredientAutocomplete.tsx`** — two-phase debounce component (timer → state → useEffect → API call)
+4. **`screens/AddIngredientsScreen.tsx`** + **`screens/EditPantryItemScreen.tsx`** — IngredientAutocomplete wired in
+5. **`components/__tests__/IngredientAutocomplete.test.tsx`** — 13/13 passing (selective fake timers)
+6. **`screens/__tests__/AddIngredientsScreen.test.tsx`** — 18/18 passing (autocomplete tests scoped with per-describe fake timers)
 
 ---
 
-### Priority 2 — API service unit tests (`services/api.ts`)
+## Recipe-matching question (answered)
 
-**Why this matters:** every frontend screen test mocks the API. If the backend changes a response shape, endpoint URL, or required field, all 139 tests still pass even though the live app is broken. API service tests are the only thing that catches this class of bug without a running backend.
+**"Are we able to match these ingredients that are cached with ingredients to generate recipes?"**
 
-Create `services/__tests__/api.test.ts`. Mock `axios` at the module level and test:
+Yes, automatically. When a user picks an ingredient from the autocomplete dropdown, the selected `ingredient_name` is stored in their pantry item. Recipe generation reads pantry items by name and uses them to build the prompt. No extra work needed — the pipeline already connects. The cache also helps by standardising names (always "Tomatoes", never "tomato" / "Tomatos"), so recipe generation prompts are cleaner and more consistent than free-text entry.
 
-- Correct endpoint URLs are called (`GET /api/v1/pantry`, etc.)
-- Request payloads are shaped correctly (field names, types)
-- Successful responses are parsed and returned correctly
-- 4xx/5xx responses throw with a meaningful error message
-- **The 401 → token refresh → retry interceptor** — this is the trickiest and most important:
-  - First call returns 401 → `supabase.auth.refreshSession()` is called → request is retried with new token
-  - If refresh also fails → `supabase.auth.signOut()` is called
-  - The `_retry` flag prevents infinite loops
-- Auth header is set correctly from SecureStore token
+---
 
-```typescript
-// Skeleton for the interceptor test:
-jest.mock('axios')
-jest.mock('../services/supabase', ...)  // already in jest-setup.ts globally
-jest.mock('expo-secure-store', ...)     // already in jest-setup.ts globally
+## Remaining tasks (next session)
 
-it('retries a 401 with a refreshed token', async () => {
-  // First call → 401, second call → 200
-  // Assert refreshSession was called once, request was retried
-})
-```
+1. **Seed the ingredient cache** — run `python backend/seed_ingredients.py` against the production Supabase DB once the backend is deployed. This is NOT a migration — migration `007_create_ingredient_cache.sql` already creates the table. The seed script just inserts 150 starter ingredients.
+2. **Update `spec.md`** — document ingredient autocomplete architectural decisions (two-phase debounce, ingredient cache, popularity ranking)
+3. **Merge / commit** — commit all changes on this branch and open a PR to `main`
+4. **Deploy backend to Render** — set env vars in Render dashboard (DATABASE_URL, SUPABASE_URL, SUPABASE_KEY, SUPABASE_SERVICE_KEY, OPENAI_API_KEY)
+5. **Update `EXPO_PUBLIC_API_URL`** in root `.env` to point at Render URL
+6. **Database migrations** — only needed if this is a fresh Supabase project with no prior migrations run. All 11 already exist (001–011); no new ones were added in Sprint 4.
 
 ---
 
@@ -114,7 +98,7 @@ resolveIt()       // unblock the promise
 await pressPromise // let act() complete
 ```
 
-**Important:** after the non-awaited `fireEvent.press`, you can assert on mock call counts (synchronous) but NOT on UI state (e.g. `queryByText`). React's re-render commit is async — it only happens after `act()`'s promise resolves. Don't write `expect(queryByText('Sign In')).toBeNull()` without awaiting.
+**Important:** after the non-awaited `fireEvent.press`, you can assert on mock call counts (synchronous) but NOT on UI state (e.g. `queryByText`). React's re-render commit is async — it only happens after `act()`'s promise resolves.
 
 ### Alert mock — must include `__esModule: true` and `default`
 ```typescript
@@ -135,13 +119,32 @@ expect(Alert.alert).toHaveBeenCalledWith('Title', expect.any(String), expect.any
 ```
 
 ### `__DEV__` is `true` in Jest
-The Seed button is visible in PantryScreen tests. This is intentional and expected. Don't add `if (!__DEV__)` to hide it — just account for it in the test (or assert it exists).
+The Seed button is visible in PantryScreen tests. This is intentional and expected.
 
-### App smoke test gotchas (for reference if you need to extend it)
+### Debounce tests — selective fake timers pattern
+```typescript
+// In beforeAll (or beforeEach for a single describe block):
+jest.useFakeTimers({
+  doNotFake: ['setImmediate', 'clearImmediate', 'queueMicrotask'],
+})
+
+// Advance the debounce inside act() — flushes the full async chain:
+async function advanceDebounce() {
+  await act(async () => { jest.advanceTimersByTime(350) })
+}
+
+// In afterEach:
+jest.clearAllTimers()
+await new Promise<void>(r => setImmediate(r))
+await new Promise<void>(r => setImmediate(r))
+```
+
+If you only need fake timers for SOME tests in a file, scope `useFakeTimers`/`useRealTimers` to a `beforeEach`/`afterEach` inside a `describe` block — don't add them at file level, as that would break any `waitFor` calls outside that describe (which need real `setInterval`).
+
+### App smoke test gotchas
 - `expo-sqlite` must be mocked with `openDatabaseAsync` (async API) not `openDatabaseSync`
-- `createNativeStackNavigator` mock: Navigator reads `React.Children.toArray(children)[0]?.props?.component` directly — `Screen` itself returns null (it's a descriptor). This renders only the initial route.
-- The AuthContext logs `console.error('Failed to check auth status:')` during the smoke test — this is benign. The Supabase default mock returns `null` where AuthContext expects a session shape; the `finally` block still sets `loading=false` and the login screen renders correctly.
-- `NavigationContainer` must be mocked as a passthrough — it requires a native bridge unavailable in Jest.
+- `createNativeStackNavigator` mock: Navigator reads `React.Children.toArray(children)[0]?.props?.component` directly
+- `NavigationContainer` must be mocked as a passthrough
 
 ---
 
@@ -196,15 +199,44 @@ await fireEvent.press(getByTestId('icon-camera'))
 
 ---
 
-## Coverage gap summary
+## Notable gotchas for api.test.ts
 
-| Area | Status |
-|------|--------|
-| 5 main screens (Login, Pantry, Recipes, Scan, ReceiptConfirm) | ✅ 96 tests |
-| Utility functions | ✅ 41 tests |
-| App boot / auth gate | ✅ 2 smoke tests |
-| **8 screens (Register, Home, BarcodeResult, EditPantryItem, Grocery, AddIngredients, Schedule, RecipeDetail)** | ❌ 0 tests |
-| **`services/api.ts` (endpoint URLs, payload shape, 401 interceptor)** | ❌ 0 tests |
-| Real API integration (backend contract) | ❌ mocked only |
-| Real camera / barcode / OCR pipeline | ❌ mocked only |
-| End-to-end navigation flows | ❌ only assert navigate() was called |
+### axios.create() mock — hoisting issue
+
+`jest.mock('axios', factory)` is hoisted by babel-jest before all imports. A `const mockState: any = { ... }` declared OUTSIDE the factory is `undefined` when the factory runs. Pattern that DOES work:
+
+```typescript
+jest.mock('axios', () => {
+  const handlers: { requestFn?: any; responseErrFn?: any } = {}
+  const instance = Object.assign(jest.fn(), {
+    get: jest.fn(), post: jest.fn(), put: jest.fn(), delete: jest.fn(),
+    interceptors: {
+      request: { use: jest.fn((fn: any) => { handlers.requestFn = fn }) },
+      response: { use: jest.fn((_: any, fn: any) => { handlers.responseErrFn = fn }) },
+    },
+    _handlers: handlers,
+  })
+  return { __esModule: true, default: { create: () => instance }, __mockInstance: instance }
+})
+
+const mockAxios = jest.requireMock('axios').__mockInstance
+const getRequestFn = () => (mockAxios as any)._handlers.requestFn
+const getResponseErrFn = () => (mockAxios as any)._handlers.responseErrFn
+```
+
+### `jest.clearAllMocks()` wipes `mock.calls` — interceptor handlers must not live there
+
+Store interceptor handlers in a plain object (`_handlers`) — `mockClear` leaves plain object properties untouched.
+
+---
+
+## The IngredientAutocomplete component design
+
+`components/IngredientAutocomplete.tsx` uses a **two-phase debounce** design:
+
+- Phase 1: `setTimeout` only calls `setSearchQuery(text)` — pure synchronous setState
+- Phase 2: `useEffect` reacts to `searchQuery` changes and makes the async API call
+
+A `cancelled` ref flag in the `useEffect` cleanup prevents stale state updates after unmount or when a new search starts.
+
+**DO NOT revert this design.** Any approach that puts async code inside the `setTimeout` callback will cause nested-async-act corruption in tests.

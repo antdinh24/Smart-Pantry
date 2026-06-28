@@ -45,6 +45,8 @@ import {
 import Icon from "react-native-vector-icons/Feather"
 import { useNavigation } from "@react-navigation/native"
 import { usePantry } from "../hooks/usePantry"
+import IngredientAutocomplete from "../components/IngredientAutocomplete"
+import { IngredientSearchResult } from "../services/api"
 
 /**
  * CATEGORIES — matches the backend's PantryService.categorize_ingredient() values.
@@ -193,18 +195,20 @@ export default function AddIngredientsScreen() {
             <Text style={styles.label}>
               Ingredient Name <Text style={styles.required}>*</Text>
             </Text>
-            <View style={styles.inputRow}>
-              <Icon name="package" size={16} color="#64748b" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                value={name}
-                onChangeText={setName}
-                placeholder="e.g. Whole Milk"
-                placeholderTextColor="#475569"
-                returnKeyType="next"
-                autoCorrect={false}
-              />
-            </View>
+            {/*
+             * IngredientAutocomplete replaces the plain TextInput.
+             * onSelect auto-fills the category chip when the user picks a
+             * suggestion that has a known category (e.g. "Tomatoes" → "produce").
+             * The user can still override the category manually after selecting.
+             */}
+            <IngredientAutocomplete
+              value={name}
+              onChangeText={setName}
+              onSelect={(result: IngredientSearchResult) => {
+                if (result.category) setCategory(result.category)
+              }}
+              placeholder="e.g. Whole Milk"
+            />
 
             {/* Quantity + Unit row */}
             <View style={styles.row}>

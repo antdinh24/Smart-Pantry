@@ -46,6 +46,8 @@ import { useNavigation, useRoute, RouteProp } from "@react-navigation/native"
 import { usePantry } from "../hooks/usePantry"
 import { RootStackParamList } from "../types/navigation"
 import { NativeStackNavigationProp } from "@react-navigation/native-stack"
+import IngredientAutocomplete from "../components/IngredientAutocomplete"
+import { IngredientSearchResult } from "../services/api"
 
 /** Route prop type so TypeScript knows exactly which params this screen receives */
 type EditPantryItemRouteProp = RouteProp<RootStackParamList, "EditPantryItem">
@@ -284,18 +286,19 @@ export default function EditPantryItemScreen() {
             <Text style={styles.label}>
               Ingredient Name <Text style={styles.required}>*</Text>
             </Text>
-            <View style={styles.inputRow}>
-              <Icon name="package" size={16} color="#64748b" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                value={name}
-                onChangeText={setName}
-                placeholder="e.g. Whole Milk"
-                placeholderTextColor="#475569"
-                returnKeyType="next"
-                autoCorrect={false}
-              />
-            </View>
+            {/*
+             * IngredientAutocomplete replaces the plain TextInput.
+             * onSelect auto-fills the category chip when the user picks a
+             * suggestion — they can still override the category manually.
+             */}
+            <IngredientAutocomplete
+              value={name}
+              onChangeText={setName}
+              onSelect={(result: IngredientSearchResult) => {
+                if (result.category) setCategory(result.category)
+              }}
+              placeholder="e.g. Whole Milk"
+            />
 
             {/* Quantity + Unit row */}
             <View style={styles.row}>
@@ -396,7 +399,6 @@ export default function EditPantryItemScreen() {
 
           {/* ── Delete section ── */}
           <View style={styles.dangerCard}>
-            <Text style={styles.dangerLabel}>Danger Zone</Text>
             <TouchableOpacity
               style={[styles.deleteButton, deleting && styles.buttonDisabled]}
               onPress={handleDelete}

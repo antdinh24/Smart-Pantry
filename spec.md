@@ -1,6 +1,6 @@
 # Spec — Pantry & Recipe Planner App
 
-**Current Version: v0.03** — last updated 2026-06-21
+**Current Version: v0.04** — last updated 2026-06-26
 
 This document is a **technical specification** derived from the Product Requirements Document (PRD). It is intended for **engineering execution**, AI-assisted development (Vercel/Cursor), and backend–frontend alignment. Sprint plans and task tracking live in [`SPRINTS.md`](SPRINTS.md).
 
@@ -853,7 +853,63 @@ The axios response interceptor handles 401s in two steps:
 
 ---
 
+## 25. Ingredient Autocomplete
+
+### Feature Summary
+
+`AddIngredientsScreen` and `EditPantryItemScreen` use an `IngredientAutocomplete` component in place of a plain `TextInput` for the ingredient name field. As the user types, matching ingredients are fetched from the backend and shown in a dropdown list below the input. Tapping a suggestion auto-fills the name and category fields.
+
+### Component: `IngredientAutocomplete`
+
+Located at `components/IngredientAutocomplete.tsx`. Controlled component — parent owns `value` and passes `onChangeText` and `onSelect`.
+
+**Props:**
+- `value` — controlled input value
+- `onChangeText` — called on every keystroke; parent updates value
+- `onSelect(result: IngredientSearchResult)` — called when user taps a suggestion; parent uses this to auto-fill category
+- `placeholder` — forwarded to the inner TextInput
+
+**Behaviour:**
+- Shows up to 5 suggestions below the input
+- Suggestions are hidden until 2+ characters are typed
+- Displays a loading spinner while the search request is in flight
+- Tapping a suggestion fills the name, calls `onSelect`, hides the list, and fires `POST /ingredients/{id}/select` to increment popularity (fire-and-forget)
+
+### Two-Phase Debounce Design (DO NOT change this)
+
+The component uses a two-phase debounce rather than calling the API directly inside `setTimeout`:
+
+1. **Phase 1 — `setTimeout` (300ms):** only calls `setSearchQuery(text)` — a pure synchronous `setState`
+2. **Phase 2 — `useEffect`:** reacts to `searchQuery` changes and makes the async API call
+
+**Why:** React's `act()` test utility can flush a `useEffect` chain (state change → effect → Promise → state changes) but cannot track async work started inside a raw `setTimeout` callback. Moving the API call into a `useEffect` makes the component deterministically testable without real-time waits.
+
+A `cancelled` flag in the `useEffect` cleanup prevents stale `setSuggestions` calls when a newer search starts before the current one finishes.
+
+### Backend: Ingredient Cache
+
+The `ingredient_cache` table (created by migration `007_create_ingredient_cache.sql`) stores pre-seeded ingredient records with `ingredient_name`, `normalized_name`, `category`, and `popularity`.
+
+**Search endpoint:** `GET /api/v1/ingredients/search?q={query}&limit={n}`
+- Returns up to `limit` matching rows ordered by `popularity DESC`
+- Query matches on `ingredient_name ILIKE '%q%'`
+
+**Select endpoint:** `POST /api/v1/ingredients/{id}/select`
+- Increments `popularity` on the matched row
+- Used for ranking — frequently selected ingredients appear higher in future searches
+
+**Seeding:** `backend/seed_ingredients.py` populates 150 common grocery ingredients. Run this once against the production database after the first deploy. It is idempotent (uses `ON CONFLICT DO NOTHING`).
+
+### How Autocomplete Connects to Recipe Generation
+
+Ingredient names selected from the autocomplete are stored in `PantryItem.ingredient_name`. Recipe generation reads pantry items by name. The cache standardises names (always "Tomatoes", never "tomato"/"Tomatos"), making recipe generation prompts cleaner and more consistent. There is no direct join between `ingredient_cache` and the recipe generation query.
+
+---
+
 ## Version History
+
+### v0.04 — 2026-06-26
+- **Added §25 Ingredient Autocomplete**: `IngredientAutocomplete` component, two-phase debounce design rationale, `ingredient_cache` backend table, search/select endpoints, seeding instructions, and connection to recipe generation.
 
 ### v0.03 — 2026-06-21
 - **Added §23 Production Hosting**: Render free tier chosen over Railway (Railway trial expired). Cold start tradeoff accepted for pre-revenue test phase. Stripe config fields made optional (empty string defaults) so server starts without them until Stripe is built.
