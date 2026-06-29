@@ -139,7 +139,7 @@ export const SupabaseService = {
       .from('users')
       .select('*')
       .eq('user_id', userId)
-      .single()
+      .maybeSingle()  // returns null instead of throwing PGRST116 when no profile row exists
 
     if (error) throw error
     return data

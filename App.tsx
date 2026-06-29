@@ -90,34 +90,49 @@ function AuthNavigator() {
  * This navigator is shown when a user is logged in.
  * Home is the default landing screen.
  */
+/**
+ * AppNavigator
+ *
+ * Renders all main app screens.
+ * This navigator is shown when a user is logged in.
+ * Home is the default landing screen.
+ *
+ * WHY AppProvider is here and not in App's root:
+ *   PantryContext and RecipesContext call the backend on mount. If they mounted
+ *   unconditionally (outside the auth gate), they would fire requests before the
+ *   Supabase session is loaded and get 403s. Wrapping them here means they only
+ *   mount after RootNavigator has confirmed the user is authenticated.
+ */
 function AppNavigator() {
   return (
-    <AppStack.Navigator
-      screenOptions={{
-        headerShown: false,
-        contentStyle: { backgroundColor: "#0f1419" },
-      }}
-    >
-      <AppStack.Screen name="Home" component={HomeScreen} />
-      <AppStack.Screen name="Pantry" component={PantryScreen} />
-      <AppStack.Screen name="Recipes" component={RecipesScreen} />
-      <AppStack.Screen name="Schedule" component={ScheduleScreen} />
-      <AppStack.Screen name="AddIngredients" component={AddIngredientsScreen} />
-      <AppStack.Screen name="Grocery" component={GroceryScreen} />
-      <AppStack.Screen name="Scan" component={ScanScreen} />
-      <AppStack.Screen name="BarcodeResult" component={BarcodeResultScreen} />
-      <AppStack.Screen name="EditPantryItem" component={EditPantryItemScreen} />
-      {/*
-       * ReceiptConfirm — navigated to from ScanScreen after a receipt is scanned.
-       * Shows a checklist of extracted items; user confirms before adding to pantry.
-       */}
-      <AppStack.Screen name="ReceiptConfirm" component={ReceiptConfirmScreen} />
-      {/*
-       * RecipeDetail — navigated to from RecipesScreen when the user taps "View Recipe".
-       * Fetches the full recipe (ingredients + instructions) via GET /recipes/:id on mount.
-       */}
-      <AppStack.Screen name="RecipeDetail" component={RecipeDetailScreen} />
-    </AppStack.Navigator>
+    <AppProvider>
+      <AppStack.Navigator
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: "#0f1419" },
+        }}
+      >
+        <AppStack.Screen name="Home" component={HomeScreen} />
+        <AppStack.Screen name="Pantry" component={PantryScreen} />
+        <AppStack.Screen name="Recipes" component={RecipesScreen} />
+        <AppStack.Screen name="Schedule" component={ScheduleScreen} />
+        <AppStack.Screen name="AddIngredients" component={AddIngredientsScreen} />
+        <AppStack.Screen name="Grocery" component={GroceryScreen} />
+        <AppStack.Screen name="Scan" component={ScanScreen} />
+        <AppStack.Screen name="BarcodeResult" component={BarcodeResultScreen} />
+        <AppStack.Screen name="EditPantryItem" component={EditPantryItemScreen} />
+        {/*
+         * ReceiptConfirm — navigated to from ScanScreen after a receipt is scanned.
+         * Shows a checklist of extracted items; user confirms before adding to pantry.
+         */}
+        <AppStack.Screen name="ReceiptConfirm" component={ReceiptConfirmScreen} />
+        {/*
+         * RecipeDetail — navigated to from RecipesScreen when the user taps "View Recipe".
+         * Fetches the full recipe (ingredients + instructions) via GET /recipes/:id on mount.
+         */}
+        <AppStack.Screen name="RecipeDetail" component={RecipeDetailScreen} />
+      </AppStack.Navigator>
+    </AppProvider>
   )
 }
 
@@ -233,17 +248,15 @@ export default function App() {
 
   return (
     <AuthProvider>
-      <AppProvider>
-        <StatusBar barStyle="light-content" backgroundColor="#0f1419" />
-        <NavigationContainer>
-          {/*
-           * RootNavigator sits inside AuthProvider so it can call useAuth().
-           * It decides whether to show AuthNavigator or AppNavigator
-           * based on whether a user is logged in.
-           */}
-          <RootNavigator />
-        </NavigationContainer>
-      </AppProvider>
+      <StatusBar barStyle="light-content" backgroundColor="#0f1419" />
+      <NavigationContainer>
+        {/*
+         * RootNavigator sits inside AuthProvider so it can call useAuth().
+         * It decides whether to show AuthNavigator or AppNavigator
+         * based on whether a user is logged in.
+         */}
+        <RootNavigator />
+      </NavigationContainer>
     </AuthProvider>
   )
 }

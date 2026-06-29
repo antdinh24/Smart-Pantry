@@ -33,7 +33,7 @@
 
 ---
 
-## Sprint 2 — Receipts & Barcode Scanning UI (status: active)
+## Sprint 2 — Receipts & Barcode Scanning UI (status: complete)
 
 **Dates:** 2026-06-20 → ongoing
 **Branch:** `Receipts-and-Barcode-Scanning`
@@ -124,3 +124,119 @@
 $proc = (Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue).OwningProcess
 if ($proc) { Stop-Process -Id $proc -Force }
 ```
+
+---
+
+## Sprint 3 — Comprehensive Frontend Test Suite (status: complete)
+
+**Dates:** 2026-06-22 → 2026-06-23
+**Branch:** `frontend-jest-test-suite`
+**Goal:** Achieve full unit-test coverage of all frontend screens, contexts, and the API service layer. 445/445 tests passing across 21 suites.
+
+### Tasks
+- [x] RegisterScreen tests — form validation, signUp call, navigation
+- [x] HomeScreen tests — expiry alert, quick action nav, bottom nav
+- [x] BarcodeResultScreen tests — found/not-found banners, addItem call, success/error alerts
+- [x] EditPantryItemScreen tests — pre-populated form, 3 validation guards, updateItem, deleteItem with Alert confirm
+- [x] GroceryScreen tests — toggle, add form, clearCompleted show/hide, goBack
+- [x] AddIngredientsScreen tests — 4 validation guards, payload shape, success/error, loading state
+- [x] ScheduleScreen tests — day cards, empty day placeholder, meal names, nav
+- [x] RecipeDetailScreen tests — loading/error/404 states, Try Again, loaded metadata/ingredients/instructions/nutrition/AI disclaimer
+- [x] `services/__tests__/api.test.ts` — 37 tests: all 18 endpoint URLs + payloads, auth header interceptor, 401 → refresh → retry flow, refresh failure → signOut
+- [x] `contexts/__tests__/PantryContext.test.tsx` — 35 tests: fetch lifecycle, isUrgent flag, stats derivation, categories, CRUD mutations + failure isolation, refreshItems, getItemById, getFilteredItems, provider guard
+- [x] `contexts/__tests__/AuthContext.test.tsx` — 31 tests: all 4 sign-in paths, signOut, refreshSubscriptionStatus, isPremium/isGuest flags, provider guard
+- [x] `contexts/__tests__/RecipesContext.test.tsx` — 30 tests: fetch lifecycle, generateRecipe prepend + generating flag, refreshRecipes, getFilteredRecipes (match/time/name), provider guard
+- [x] `contexts/__tests__/GroceryContext.test.tsx` — 25 tests: addItem ID assignment, toggleItem, clearCompleted, deleteItem, updateItem, getItemById, stats recalculation, provider guard
+- [x] `contexts/__tests__/MealScheduleContext.test.tsx` — 18 tests: addMeal, removeMeal, updateMeal, getMealsForDay, provider guard
+
+### Retro Notes
+
+**axios mock — hoisting of module-level const with TypeScript type annotations does NOT work:**
+`const mockState: { instance: SomeType } = {}` is `undefined` when the `jest.mock('axios', factory)` factory runs. babel-jest's 'mock' prefix hoisting skips declarations with complex TypeScript type annotations. Fix: define everything inside the factory closure; expose the mock instance via the mocked module's own property; access it with `jest.requireMock('axios').__mockInstance`. Documented in full in `HANDOVER.md`.
+
+**`jest.clearAllMocks()` kills interceptor handler references stored in `mock.calls`:**
+Interceptors are registered once (when api.ts is first imported). If you read `interceptors.request.use.mock.calls[0][0]` inside a test, it's `undefined` because `beforeEach: jest.clearAllMocks()` wiped the call history. Fix: capture handlers in a plain object (`_handlers`) stored on the mock instance — `mockClear()` does not touch plain object properties, only the `mock.*` arrays.
+
+**HomeScreen duplicate text — `getAllByText` required:**
+"Schedule" and "Recipes" appear both in the Quick Actions grid and the bottom nav. `getByText('Schedule')` throws "Found multiple elements". Use `getAllByText('Schedule').length >= 1` or target the subtitle text unique to each card ("Plan meals", "Generate ideas") to avoid ambiguity.
+
+**RecipeDetailScreen ingredient name collision:**
+`getByText(/Spaghetti/)` matches both "Spaghetti Carbonara" (recipe title) and "200 g Spaghetti" (ingredient). Use `getAllByText(/Spaghetti/).length >= 1` instead.
+
+**renderHook guard tests — use `.rejects.toThrow()`, not `expect(() => renderHook()).toThrow()`:**
+In RNTL v14, `renderHook` is async. When the hook throws synchronously during render, the returned Promise rejects rather than the call throwing synchronously. Correct pattern:
+```typescript
+await expect(renderHook(() => useMyHook())).rejects.toThrow('expected message')
+```
+`expect(() => renderHook(...)).toThrow(...)` will NOT work — it doesn't see the async rejection.
+
+**Context tests — use `renderHook(callback, { wrapper })` + `waitFor` for async effects:**
+Pattern for testing a context hook:
+```typescript
+const wrapper = ({ children }) => <MyProvider>{children}</MyProvider>
+const { result } = await renderHook(() => useMyHook(), { wrapper })
+await waitFor(() => expect(result.current.loading).toBe(false))
+// Now safe to assert on result.current.*
+```
+Mutations must be wrapped in `act(async () => { await result.current.mutate(...) })`.
+
+**EditPantryItemScreen Alert button extraction:**
+To test the "Delete" confirm button inside an Alert, extract the callback array from mock call history:
+```typescript
+const alertArgs = (Alert.alert as jest.Mock).mock.calls[0]
+const deleteBtn = alertArgs[2].find((b: any) => b.text === 'Delete')
+await deleteBtn.onPress()
+```
+
+**Context mutation tests — always `await act(async () => { ... })`:**
+In React 19 / RNTL v14, `act()` always returns a Promise — even when the callback is synchronous. Calling `act(() => { ... })` without `await` means React's state update is not committed before the next line runs. Symptoms: the test sees the old value (mutation appears to have no effect), OR `result.current` is `null` in the test AFTER the one that had the un-awaited act (React leaves the tree in a "dirty" state that can cause subsequent renderHook calls to produce a null result). Always use:
+```typescript
+await act(async () => { result.current.toggleItem(3) })
+// Never: act(() => { result.current.toggleItem(3) })
+```
+For contexts with async mutations (API calls): `await act(async () => { await result.current.generateRecipe([...]) })`.
+
+**GroceryContext and MealScheduleContext mock data — define inline in the factory:**
+Both contexts initialise state from `mockDataService` exports at `useState()` time. If mock fixture data is declared as a module-level `const FIXTURE: Type[] = [...]` and referenced inside the `jest.mock()` factory, babel-jest's hoisting moves the `jest.mock()` call before the const initializer, so `FIXTURE` is `undefined` when the factory runs. Fix: define the data inline inside the factory return value, OR use a `jest.fn(() => DATA)` implementation (lazy evaluation — `DATA` is only read when the mock is called, which is after module initialisation completes).
+
+---
+
+## Sprint 4 — Ingredient Autocomplete Feature (status: complete)
+
+**Dates:** 2026-06-26
+**Branch:** `frontend-jest-test-suite`
+**Goal:** Add a real-time ingredient autocomplete component to AddIngredientsScreen and EditPantryItemScreen, backed by a seeded ingredient cache, with full test coverage (474/474 passing).
+
+### Tasks
+- [x] `backend/seed_ingredients.py` — 150 common grocery ingredients seeded into `ingredient_cache` table
+- [x] `services/api.ts` — `IngredientSearchResult` type + `searchIngredients` + `selectIngredient` methods
+- [x] `components/IngredientAutocomplete.tsx` — two-phase debounce component (timer → state → useEffect → API call)
+- [x] `screens/AddIngredientsScreen.tsx` — IngredientAutocomplete wired in place of plain TextInput
+- [x] `screens/EditPantryItemScreen.tsx` — IngredientAutocomplete wired in place of plain TextInput
+- [x] `components/__tests__/IngredientAutocomplete.test.tsx` — 13/13 passing (selective fake timers approach)
+- [x] `screens/__tests__/AddIngredientsScreen.test.tsx` — 18/18 passing (autocomplete integration tests fixed)
+- [x] Full suite: 474/474 passing across 22 suites
+
+### Retro Notes
+
+**Two-phase debounce design (non-negotiable for testability):**
+The `setTimeout` callback only calls `setSearchQuery(text)` — pure synchronous `setState`. The async API call lives in a `useEffect` that reacts to `searchQuery`. This design is required because React's `act()` can flush a `useEffect` chain (state change → effect → Promise → state changes) but CANNOT track async work started inside a raw `setTimeout` callback. Do NOT move API calls into the `setTimeout` callback — doing so causes nested-async-act corruption in tests.
+
+**Selective fake timers — the only working approach for debounce tests:**
+```typescript
+jest.useFakeTimers({
+  doNotFake: ['setImmediate', 'clearImmediate', 'queueMicrotask'],
+})
+```
+This fakes only `setTimeout/clearTimeout` (our debounce). React's scheduler (`setImmediate`, `MessageChannel`) stays real, so `jest.advanceTimersByTime(350)` inside `act()` fires our debounce without touching React's internal scheduler — preventing "overlapping act" corruption.
+
+Every other approach tried (full fake timers + `runAllTimers`, real timers + `findByText`, `afterEach` setImmediate drains) failed due to either overlapping act corruption or cross-test contamination from the 3-keystroke `changeText` pattern in the debounce deduplication test.
+
+**Scoping fake timers to a single describe block:**
+In `AddIngredientsScreen.test.tsx`, the autocomplete tests needed fake timers but the form tests relied on `waitFor` (which internally uses `setInterval`, which would be faked by a file-level `useFakeTimers`). Solution: put `jest.useFakeTimers({...})` in a `beforeEach` and `jest.useRealTimers()` in an `afterEach` scoped to only the autocomplete `describe` block. Tests outside that block continue to use real timers.
+
+**Deprecated `findByText` timeout parameter:**
+`findByText(text, { timeout: 2000 })` puts the timeout in the query options (2nd param) which is deprecated — it should be in `waitForOptions` (3rd param). Avoid entirely by using `advanceDebounce()` + synchronous `getByText` instead.
+
+**Cancelled ref flag in useEffect cleanup:**
+The `let cancelled = false` / `return () => { cancelled = true }` pattern inside the search `useEffect` prevents stale `setSuggestions` calls when the user types faster than the API responds, or when the component unmounts mid-flight. This is standard React cleanup — do not remove it.

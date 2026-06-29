@@ -13,6 +13,23 @@ import { env } from '../config/env'
 import StorageService from './storage'
 import { supabase } from './supabase'
 
+/**
+ * A single ingredient search result from GET /api/v1/ingredients/search.
+ *
+ * id may be null for freshly-returned OpenFoodFacts results that have not
+ * yet been persisted to the cache (they are cached server-side, but the id
+ * is absent in the combined response). Only call selectIngredient() when id
+ * is non-null.
+ */
+export interface IngredientSearchResult {
+  id: string | null
+  ingredient_name: string
+  normalized_name: string
+  category: string | null
+  popularity: number
+  source: string
+}
+
 // Create axios instance
 const apiClient: AxiosInstance = axios.create({
   baseURL: env.apiUrl,
@@ -311,6 +328,55 @@ export const APIService = {
   createCheckoutSession: async () => {
     const { data } = await apiClient.post('/subscription/checkout')
     return data
+  },
+
+  // ============================================================
+  // INGREDIENT SEARCH ENDPOINTS
+  // ============================================================
+
+  /**
+   * searchIngredients
+   *
+   * Returns matching ingredients from the backend's cache-first search.
+   * Searches the local ingredient_cache first; falls back to OpenFoodFacts
+   * API if the cache has fewer than 10 results. Used by IngredientAutocomplete
+   * to show suggestions as the user types.
+   *
+   * Never throws — returns an empty array on network error so the form remains
+   * usable when offline or when the backend is unreachable.
+   *
+   * @param query - Partial name to search for (e.g. "tom", "chick"). Min 2 chars.
+   * @param limit - Maximum results to return (default 10).
+   * @returns Array of IngredientSearchResult, sorted by popularity descending.
+   */
+  searchIngredients: async (query: string, limit = 10): Promise<IngredientSearchResult[]> => {
+    try {
+      const { data } = await apiClient.get('/ingredients/search', {
+        params: { q: query, limit },
+      })
+      return data.results as IngredientSearchResult[]
+    } catch {
+      return []
+    }
+  },
+
+  /**
+   * selectIngredient
+   *
+   * Increments the popularity counter for an ingredient in the cache.
+   * Called fire-and-forget after the user taps a suggestion — this trains
+   * the ranking so frequently-chosen ingredients surface first in future searches.
+   *
+   * Errors are silently swallowed; popularity tracking is non-critical.
+   *
+   * @param ingredientId - UUID of the ingredient_cache row.
+   */
+  selectIngredient: async (ingredientId: string): Promise<void> => {
+    try {
+      await apiClient.post(`/ingredients/${ingredientId}/select`)
+    } catch {
+      // Non-critical — popularity tracking failure must not surface to the user
+    }
   },
 
   // ============================================================
